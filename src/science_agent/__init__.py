@@ -10,15 +10,18 @@ from .tools.base import Tool, ToolExecutionContext
 from .tools.registry import ToolRegistry
 from .types import ModelResponse, ToolCallRequest
 
+_openai_provider_import_error: ModuleNotFoundError | None = None
+
 try:
     from .infra.providers.openai import OpenAIProvider
 except ModuleNotFoundError as exc:  # pragma: no cover
+    _openai_provider_import_error = exc
 
     class OpenAIProvider:  # type: ignore[no-redef]
         def __init__(self, *args, **kwargs) -> None:
             raise ModuleNotFoundError(
                 "OpenAIProvider requires the optional dependency 'httpx'. Install project dependencies first."
-            ) from exc
+            ) from _openai_provider_import_error
 
 
 __all__ = [
