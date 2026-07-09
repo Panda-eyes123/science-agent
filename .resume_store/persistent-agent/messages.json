@@ -1,0 +1,14 @@
+[
+  {
+    "role": "user",
+    "content": "Remember that my next experiment uses phosphate buffer.",
+    "name": null,
+    "tool_call_id": null
+  },
+  {
+    "role": "assistant",
+    "content": "State saved and restored successfully.",
+    "name": null,
+    "tool_call_id": null
+  }
+]
