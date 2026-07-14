@@ -13,7 +13,7 @@ from .types import ModelResponse, ToolCallRequest
 _openai_provider_import_error: ModuleNotFoundError | None = None
 
 try:
-    from .infra.providers.openai import OpenAIProvider
+    from .infra.providers.openai import OpenAIProvider, RetryConfig
 except ModuleNotFoundError as exc:  # pragma: no cover
     _openai_provider_import_error = exc
 
@@ -21,6 +21,12 @@ except ModuleNotFoundError as exc:  # pragma: no cover
         def __init__(self, *args, **kwargs) -> None:
             raise ModuleNotFoundError(
                 "OpenAIProvider requires the optional dependency 'httpx'. Install project dependencies first."
+            ) from _openai_provider_import_error
+
+    class RetryConfig:  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs) -> None:
+            raise ModuleNotFoundError(
+                "RetryConfig requires the optional dependency 'httpx'. Install project dependencies first."
             ) from _openai_provider_import_error
 
 
@@ -34,6 +40,7 @@ __all__ = [
     "ModelProvider",
     "ModelResponse",
     "OpenAIProvider",
+    "RetryConfig",
     "SandboxResult",
     "TodoItem",
     "TodoService",
