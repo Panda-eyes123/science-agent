@@ -23,7 +23,7 @@ from science_agent.infra.sandbox import LocalSandbox
 from science_agent.infra.store.types import Store
 from science_agent.tools.base import ToolExecutionContext
 from science_agent.tools.registry import ToolRegistry
-from science_agent.types import AgentInfo, Message
+from science_agent.types import AgentInfo, Message, ToolCallRecord
 from science_agent.utils.agent_id import generate_agent_id
 
 
@@ -59,7 +59,7 @@ class Agent:
         self.tool_runner = ToolRunner(self.tool_registry, self.permissions)
         self.breakpoints = BreakpointManager()
         self.messages: list[Message] = []
-        self.tool_records = []
+        self.tool_records: list[ToolCallRecord] = []
         self.info = AgentInfo(agent_id=self.agent_id, template_id=self.template.id)
 
     @classmethod
@@ -127,15 +127,8 @@ class Agent:
                         call, ToolExecutionContext(agent=self, sandbox=self.sandbox)
                     )
                     self.tool_records.append(record)
-                    if record.state == "FAILED":
-                        await self._emit(
-                            "progress",
-                            {
-                                "type": "tool:error",
-                                "call": {"name": record.name},
-                                "error": record.error,
-                            },
-                        )
+                    if record.state in {"FAILED", "DENIED"}:
+                        await self._emit_tool_error(record)
                         raise RuntimeError(record.error or "Tool execution failed.")
                     await self._emit(
                         "progress",
@@ -155,12 +148,29 @@ class Agent:
             await self._persist_state()
             await self._emit("progress", {"type": "done", "reason": "completed"})
             return final_text
+        except Exception as exc:
+            await self._emit(
+                "monitor",
+                {"type": "error", "message": str(exc), "error_type": type(exc).__name__},
+            )
+            await self._emit("progress", {"type": "done", "reason": "failed"})
+            raise
         finally:
             self.info.state = "READY"
             await self._emit(
                 "monitor", {"type": "state_changed", "state": self.info.state}
             )
             await self._persist_state()
+
+    async def _emit_tool_error(self, record: ToolCallRecord) -> None:
+        await self._emit(
+            "progress",
+            {
+                "type": "tool:error",
+                "call": {"name": record.name, "state": record.state},
+                "error": record.error,
+            },
+        )
 
     async def _emit(self, channel: str, event: dict) -> None:
         if channel == "progress":

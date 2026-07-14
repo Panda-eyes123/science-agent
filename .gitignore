@@ -1,8 +1,10 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.pytest_tmp*/
 .mypy_cache/
 .ruff_cache/
+.uv_cache/
 .coverage
 htmlcov/
 dist/
@@ -12,3 +14,7 @@ build/
 *.pyo
 *.pyd
 .env
+.demo_store/
+.resume_store/
+.science_agent_workspace/
+.agents/

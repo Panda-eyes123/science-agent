@@ -1,6 +1,0 @@
-{"seq": 1, "timestamp": 1783581443.079989, "channel": "monitor", "event": {"type": "state_changed", "state": "WORKING"}}
-{"seq": 2, "timestamp": 1783581443.0825226, "channel": "progress", "event": {"type": "tool:start", "call": {"name": "todo_write", "arguments": {"id": "lit-review", "content": "Read three papers on CRISPR delivery.", "status": "in_progress"}}}}
-{"seq": 3, "timestamp": 1783581443.0849135, "channel": "progress", "event": {"type": "tool:end", "call": {"name": "todo_write", "result": {"item": {"id": "lit-review", "content": "Read three papers on CRISPR delivery.", "status": "in_progress", "created_at": "2026-07-09T07:17:23.084876+00:00", "updated_at": "2026-07-09T07:17:23.084879+00:00"}}}}}
-{"seq": 4, "timestamp": 1783581443.0868418, "channel": "progress", "event": {"type": "text_chunk", "delta": "Todo item created. You can now continue the literature review."}}
-{"seq": 5, "timestamp": 1783581443.095622, "channel": "progress", "event": {"type": "done", "reason": "completed"}}
-{"seq": 6, "timestamp": 1783581443.0977209, "channel": "monitor", "event": {"type": "state_changed", "state": "READY"}}

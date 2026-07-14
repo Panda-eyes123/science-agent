@@ -1,4 +1,0 @@
-{"seq": 1, "timestamp": 1783581537.0437148, "channel": "monitor", "event": {"type": "state_changed", "state": "WORKING"}}
-{"seq": 2, "timestamp": 1783581537.0454752, "channel": "progress", "event": {"type": "text_chunk", "delta": "State saved and restored successfully."}}
-{"seq": 3, "timestamp": 1783581537.0551274, "channel": "progress", "event": {"type": "done", "reason": "completed"}}
-{"seq": 4, "timestamp": 1783581537.056702, "channel": "monitor", "event": {"type": "state_changed", "state": "READY"}}
