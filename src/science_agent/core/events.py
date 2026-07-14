@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import time
 from collections import defaultdict
-from typing import AsyncIterator, Iterable
+from typing import Any, AsyncIterator, Iterable
 
 from science_agent.types import AgentChannel, AgentEventEnvelope
 
@@ -53,3 +53,21 @@ class EventBus:
             for channel in selected:
                 with contextlib.suppress(ValueError):
                     self._subscribers[channel].remove(queue)
+
+
+def serialize_event_for_store(event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: _serialize_value_for_store(value)
+        for key, value in event.items()
+        if not callable(value)
+    }
+
+
+def _serialize_value_for_store(value: Any) -> Any:
+    if callable(value):
+        return None
+    if isinstance(value, dict):
+        return serialize_event_for_store(value)
+    if isinstance(value, list):
+        return [_serialize_value_for_store(item) for item in value]
+    return value

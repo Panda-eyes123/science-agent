@@ -32,9 +32,36 @@ class InvalidToolArgsProvider:
         )
 
 
+class ApprovalWriteProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, messages, *, tools=None, system_prompt=None):
+        self.calls += 1
+        if self.calls == 1:
+            return ModelResponse(
+                tool_calls=[
+                    ToolCallRequest(
+                        name="fs_write",
+                        arguments={"path": "approved.txt", "content": "approved"},
+                    )
+                ]
+            )
+        return ModelResponse(text="write finished")
+
+
 async def _collect_until_done(agent, bucket):
     async for envelope in agent.subscribe(["progress", "monitor"]):
         bucket.append(envelope)
+        if envelope.event["type"] == "done":
+            break
+
+
+async def _answer_permissions_until_done(agent, bucket, decision):
+    async for envelope in agent.subscribe(["control", "progress", "monitor"]):
+        bucket.append(envelope)
+        if envelope.event["type"] == "permission_required":
+            await envelope.event["respond"](decision, note=f"test {decision}")
         if envelope.event["type"] == "done":
             break
 
@@ -155,3 +182,81 @@ async def test_sandbox_file_tools_enforce_boundaries(tmp_path):
     assert result == {"path": "notes/result.txt", "content": "ok"}
     with pytest.raises(Exception, match="escapes sandbox"):
         await read_tool.run({"path": "..\\outside.txt"}, context)
+
+
+@pytest.mark.asyncio
+async def test_manual_permission_allows_tool_after_control_response(tmp_path):
+    templates = AgentTemplateRegistry()
+    templates.register(
+        AgentTemplateDefinition(
+            id="science", system_prompt="Write files.", tools=["fs_write"]
+        )
+    )
+    store = JSONStore(tmp_path / "store")
+    sandbox = LocalSandbox(tmp_path / "workspace")
+    agent = await Agent.create(
+        AgentConfig(
+            template_id="science",
+            model=ApprovalWriteProvider(),
+            tool_registry=register_builtin_tools(ToolRegistry()),
+            sandbox=sandbox,
+            store=store,
+            agent_id="approval-agent",
+            permission_mode="manual",
+        ),
+        templates,
+    )
+    events = []
+    consumer = asyncio.create_task(
+        _answer_permissions_until_done(agent, events, "allow")
+    )
+    await asyncio.sleep(0)
+
+    result = await agent.send("write with approval")
+    await consumer
+
+    assert result == "write finished"
+    assert sandbox.read_text("approved.txt") == "approved"
+    assert agent.tool_records[0].state == "COMPLETED"
+    assert any(item.event["type"] == "permission_required" for item in events)
+    assert any(item.event["type"] == "permission_decided" for item in events)
+
+    stored_control_events = [
+        event async for event in store.read_events("approval-agent", channel="control")
+    ]
+    assert stored_control_events[0].event["type"] == "permission_required"
+    assert "respond" not in stored_control_events[0].event
+
+
+@pytest.mark.asyncio
+async def test_manual_permission_denies_tool_after_control_response(tmp_path):
+    templates = AgentTemplateRegistry()
+    templates.register(
+        AgentTemplateDefinition(
+            id="science", system_prompt="Write files.", tools=["fs_write"]
+        )
+    )
+    sandbox = LocalSandbox(tmp_path / "workspace")
+    agent = await Agent.create(
+        AgentConfig(
+            template_id="science",
+            model=ApprovalWriteProvider(),
+            tool_registry=register_builtin_tools(ToolRegistry()),
+            sandbox=sandbox,
+            permission_mode="manual",
+        ),
+        templates,
+    )
+    events = []
+    consumer = asyncio.create_task(
+        _answer_permissions_until_done(agent, events, "deny")
+    )
+    await asyncio.sleep(0)
+
+    with pytest.raises(RuntimeError, match="denied by approval response"):
+        await agent.send("write with approval")
+    await consumer
+
+    assert agent.tool_records[0].state == "DENIED"
+    assert not (tmp_path / "workspace" / "approved.txt").exists()
+    assert any(item.event["type"] == "tool:error" for item in events)

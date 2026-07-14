@@ -4,6 +4,7 @@ from typing import Literal
 
 PermissionMode = Literal["auto", "readonly", "manual", "deny"]
 PermissionDecision = Literal["allow", "deny", "ask"]
+ApprovalDecision = Literal["allow", "deny"]
 
 
 def decide_permission(mode: PermissionMode, readonly: bool) -> PermissionDecision:

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncIterator
 
+from science_agent.agent_runtime.approval import ApprovalCoordinator
 from science_agent.agent_runtime.breakpoint_manager import BreakpointManager
 from science_agent.agent_runtime.message_queue import MessageQueue
 from science_agent.agent_runtime.permission_manager import PermissionManager
@@ -15,7 +16,7 @@ from science_agent.config import (
     DEFAULT_WORK_DIR,
 )
 from science_agent.core.context_manager import ContextManager
-from science_agent.core.events import EventBus
+from science_agent.core.events import EventBus, serialize_event_for_store
 from science_agent.core.template import AgentTemplateRegistry
 from science_agent.core.todo import TodoService
 from science_agent.infra.providers.base import ModelProvider
@@ -23,7 +24,7 @@ from science_agent.infra.sandbox import LocalSandbox
 from science_agent.infra.store.types import Store
 from science_agent.tools.base import ToolExecutionContext
 from science_agent.tools.registry import ToolRegistry
-from science_agent.types import AgentInfo, Message, ToolCallRecord
+from science_agent.types import AgentEventEnvelope, AgentInfo, Message, ToolCallRecord
 from science_agent.utils.agent_id import generate_agent_id
 
 
@@ -57,6 +58,7 @@ class Agent:
         self.todo_service = TodoService()
         self.permissions = PermissionManager(config.permission_mode)  # type: ignore[arg-type]
         self.tool_runner = ToolRunner(self.tool_registry, self.permissions)
+        self.approvals = ApprovalCoordinator(self._emit_control)
         self.breakpoints = BreakpointManager()
         self.messages: list[Message] = []
         self.tool_records: list[ToolCallRecord] = []
@@ -124,7 +126,9 @@ class Agent:
                         },
                     )
                     record = await self.tool_runner.run(
-                        call, ToolExecutionContext(agent=self, sandbox=self.sandbox)
+                        call,
+                        ToolExecutionContext(agent=self, sandbox=self.sandbox),
+                        approval_handler=self.approvals.request,
                     )
                     self.tool_records.append(record)
                     if record.state in {"FAILED", "DENIED"}:
@@ -172,6 +176,9 @@ class Agent:
             },
         )
 
+    async def _emit_control(self, event: dict) -> None:
+        await self._emit("control", event)
+
     async def _emit(self, channel: str, event: dict) -> None:
         if channel == "progress":
             envelope = await self.events.emit_progress(event)
@@ -180,7 +187,13 @@ class Agent:
         else:
             envelope = await self.events.emit_monitor(event)
         if self.store is not None:
-            await self.store.append_event(self.agent_id, envelope)
+            stored_envelope = AgentEventEnvelope(
+                seq=envelope.seq,
+                timestamp=envelope.timestamp,
+                channel=envelope.channel,
+                event=serialize_event_for_store(envelope.event),
+            )
+            await self.store.append_event(self.agent_id, stored_envelope)
 
     async def _persist_state(self) -> None:
         if self.store is None:

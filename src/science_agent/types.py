@@ -9,7 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field
 MessageRole = Literal["system", "user", "assistant", "tool"]
 AgentChannel = Literal["progress", "control", "monitor"]
 AgentRuntimeState = Literal["READY", "WORKING", "PAUSED"]
-ToolCallState = Literal["PENDING", "EXECUTING", "COMPLETED", "FAILED", "DENIED"]
+ToolCallState = Literal[
+    "PENDING",
+    "APPROVAL_REQUIRED",
+    "APPROVED",
+    "EXECUTING",
+    "COMPLETED",
+    "FAILED",
+    "DENIED",
+]
 
 
 def utc_now_iso() -> str:
