@@ -1,1 +1,1 @@
-"""Infrastructure adapters for persistence, providers, and sandboxing."""
+"""Infrastructure adapters for the science-agent SDK."""

@@ -34,6 +34,65 @@ uv venv --python 3.13
 uv sync --extra dev
 ```
 
+To use the scientific-paper RAG stack, install the optional dependencies:
+
+```powershell
+uv sync --extra rag --extra dev
+```
+
+## Paper RAG (Stages 1-3)
+
+The SDK now includes an optional, tool-layer scientific-paper RAG pipeline. The
+agent runtime remains independent; applications explicitly create the parser,
+embedding model, Milvus corpus, ingestion service, and retrieval service, then
+register the two tools.
+
+```text
+PDF -> Docling (PyMuPDF fallback) -> source elements -> parent/child chunks
+    -> Milvus native BM25 + dense vector -> RRF -> CrossEncoder -> EvidencePack
+```
+
+- Sections are rule-routed as `background`, `method`, `experiment`, `result`,
+  `discussion`, or `other`.
+- Tables retain Markdown, and figures retain captions, page number, bounding box,
+  exported local image paths, and source-element identity for future VLM retrieval.
+- Every child hit links back to a parent chunk and then original source elements.
+- Milvus stores both the indexed child chunks and the provenance records; the
+  default URI may point at a local Milvus Lite database.
+
+Minimal wiring:
+
+```python
+from science_agent.infra.corpus import MilvusCorpusStore
+from science_agent.infra.document_parsing import DoclingPDFParser
+from science_agent.infra.embeddings import SentenceTransformerEmbeddings
+from science_agent.infra.rerankers import CrossEncoderReranker
+from science_agent.rag import PaperChunker, PaperIngestionService, RetrievalService
+from science_agent.tools import ToolRegistry, register_rag_tools
+
+embeddings = SentenceTransformerEmbeddings("BAAI/bge-m3")
+corpus = MilvusCorpusStore(
+    uri="./data/science_rag.db",
+    embedding_dim=1024,
+)
+ingestion = PaperIngestionService(
+    parser=DoclingPDFParser(),
+    chunker=PaperChunker(),
+    embeddings=embeddings,
+    corpus=corpus,
+)
+retrieval = RetrievalService(
+    corpus=corpus,
+    embeddings=embeddings,
+    reranker=CrossEncoderReranker("BAAI/bge-reranker-v2-m3"),
+)
+tools = register_rag_tools(ToolRegistry(), ingestion=ingestion, retrieval=retrieval)
+```
+
+`paper_ingest` indexes a local PDF and `paper_search` returns a serializable
+evidence pack. Heavy dependencies and models load lazily, so importing the base
+SDK does not require Docling, Milvus, or sentence-transformers.
+
 ## Development Commands
 
 Run the test suite:
@@ -279,4 +338,3 @@ Near-term work:
 - Add streaming support for OpenAI-compatible responses.
 - Add CI for tests and linting.
 - Decide whether Python `3.13+` remains required or whether to support `3.11+`.
-
