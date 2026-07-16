@@ -1,7 +1,6 @@
 """Thin tool entry point for hybrid paper retrieval."""
 
-from dataclasses import asdict
-
+from science_agent.rag.rendering import render_evidence
 from science_agent.rag.retrieval import RetrievalService
 from science_agent.tools.base import Tool, ToolExecutionContext
 
@@ -13,7 +12,10 @@ def create_paper_search_tool(service: RetrievalService) -> Tool:
             limit=arguments.get("limit"),
             section_kind=arguments.get("section_kind"),
         )
-        return asdict(evidence)
+        return {
+            "evidence": render_evidence(evidence),
+            "route": evidence.route,
+        }
 
     return Tool(
         name="paper_search",

@@ -59,15 +59,13 @@ class RetrievalService:
     ) -> EvidencePack:
         requested_limit = limit or self.result_limit
         route = section_kind or route_query(query)
-        query_vector = await asyncio.to_thread(self.embeddings.embed_query, query)
+        query_vector = await self.embeddings.embed_query(query)
         bm25_hits, dense_hits = await asyncio.gather(
             self.corpus.search_bm25(query, limit=self.recall_limit, section_kind=route),
             self.corpus.search_dense(query_vector, limit=self.recall_limit, section_kind=route),
         )
         fused = reciprocal_rank_fusion([bm25_hits, dense_hits], limit=self.fusion_limit)
-        reranked = await asyncio.to_thread(
-            self.reranker.rerank, query, fused, limit=requested_limit
-        )
+        reranked = await self.reranker.rerank(query, fused, limit=requested_limit)
         parent_ids = list(dict.fromkeys(hit.parent_chunk_id for hit in reranked if hit.parent_chunk_id))
         parents = await self.corpus.get_parent_chunks(parent_ids)
         parents_by_id = {parent.chunk_id: parent for parent in parents}

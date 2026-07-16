@@ -76,15 +76,17 @@ def test_rrf_fuses_duplicate_chunks_by_rank():
 
 
 class FakeEmbeddings:
-    def embed_query(self, text: str) -> list[float]:
+    async def embed_query(self, text: str) -> list[float]:
         return [0.1, 0.2]
 
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [[0.1, 0.2] for _ in texts]
 
 
 class FakeReranker:
-    def rerank(self, query: str, hits: list[RetrievalHit], *, limit: int) -> list[RetrievalHit]:
+    async def rerank(
+        self, query: str, hits: list[RetrievalHit], *, limit: int
+    ) -> list[RetrievalHit]:
         return sorted(hits, key=lambda hit: hit.chunk_id, reverse=True)[:limit]
 
 
@@ -158,4 +160,5 @@ async def test_paper_search_tool_returns_serializable_evidence():
     result = await tool.run({"query": "method"}, ToolExecutionContext())
 
     assert result["route"] == "method"
-    assert result["source_elements"]["element-1"]["element_id"] == "element-1"
+    assert "Parent context" in result["evidence"]
+    assert "paper-1" in result["evidence"]

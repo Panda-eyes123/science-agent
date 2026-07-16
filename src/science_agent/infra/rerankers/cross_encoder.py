@@ -1,5 +1,6 @@
 """Sentence Transformers CrossEncoder adapter with lazy model loading."""
 
+import asyncio
 from typing import Any
 
 from science_agent.rag.types import RetrievalHit
@@ -10,10 +11,14 @@ class CrossEncoderReranker:
         self.model_name = model_name
         self._model: Any | None = None
 
-    def rerank(self, query: str, hits: list[RetrievalHit], *, limit: int) -> list[RetrievalHit]:
+    async def rerank(
+        self, query: str, hits: list[RetrievalHit], *, limit: int
+    ) -> list[RetrievalHit]:
         if not hits or limit <= 0:
             return []
-        scores = self._get_model().predict([(query, hit.text) for hit in hits])
+        scores = await asyncio.to_thread(
+            self._get_model().predict, [(query, hit.text) for hit in hits]
+        )
         ranked = [
             RetrievalHit(
                 chunk_id=hit.chunk_id,

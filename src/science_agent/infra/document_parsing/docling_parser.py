@@ -191,6 +191,10 @@ class DoclingPDFParser:
             return str(value).strip() or None
         return None
 
+    def resolve_image(self, image_path: str) -> Path:
+        """Reconstruct an absolute path for a stored relative figure reference."""
+        return (self.artifact_dir / image_path).resolve()
+
     def _write_figure_image(
         self, item: object, document: object, paper_id: str, ordinal: int
     ) -> str | None:
@@ -206,9 +210,10 @@ class DoclingPDFParser:
             return None
         target_dir = self.artifact_dir / paper_id
         target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / f"figure-{ordinal}.png"
+        relative = Path(paper_id) / f"figure-{ordinal}.png"
+        target = self.artifact_dir / relative
         try:
             image.save(target)
         except (AttributeError, OSError, ValueError):
             return None
-        return str(target.resolve())
+        return str(relative).replace("\\", "/")
