@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Phase-one Python skeleton for an event-driven agent SDK"
 readme = "README.md"
 requires-python = ">=3.13"
-authors = [{ name = "OpenAI Codex" }]
+authors = [{ name = "panda_eyes" }]
 dependencies = [
   "httpx>=0.27,<1",
   "pydantic>=2.8,<3",

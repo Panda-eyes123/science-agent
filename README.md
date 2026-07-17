@@ -45,7 +45,7 @@ uv sync --extra rag --extra dev
 The SDK now includes an optional, tool-layer scientific-paper RAG pipeline. The
 agent runtime remains independent; applications explicitly create the parser,
 embedding model, Milvus corpus, ingestion service, and retrieval service, then
-register the two tools.
+register the tools they need.
 
 ```text
 PDF -> Docling (PyMuPDF fallback) -> source elements -> parent/child chunks
@@ -65,15 +65,15 @@ Minimal wiring:
 ```python
 from science_agent.infra.corpus import MilvusCorpusStore
 from science_agent.infra.document_parsing import DoclingPDFParser
-from science_agent.infra.embeddings import SentenceTransformerEmbeddings
-from science_agent.infra.rerankers import CrossEncoderReranker
+from science_agent.infra.embeddings import OpenAIEmbeddingProvider
+from science_agent.infra.rerankers import APIReranker
 from science_agent.rag import PaperChunker, PaperIngestionService, RetrievalService
 from science_agent.tools import ToolRegistry, register_rag_tools
 
-embeddings = SentenceTransformerEmbeddings("BAAI/bge-m3")
+embeddings = OpenAIEmbeddingProvider(model="text-embedding-3-small")
 corpus = MilvusCorpusStore(
     uri="./data/science_rag.db",
-    embedding_dim=1024,
+    embedding_dim=1536,
 )
 ingestion = PaperIngestionService(
     parser=DoclingPDFParser(),
@@ -84,14 +84,62 @@ ingestion = PaperIngestionService(
 retrieval = RetrievalService(
     corpus=corpus,
     embeddings=embeddings,
-    reranker=CrossEncoderReranker("BAAI/bge-reranker-v2-m3"),
+    reranker=APIReranker(model="BAAI/bge-reranker-v2-m3"),
 )
 tools = register_rag_tools(ToolRegistry(), ingestion=ingestion, retrieval=retrieval)
 ```
 
+Configure reranking with `RERANK_API_KEY`, `RERANK_MODEL`, `RERANK_BASE_URL`,
+and optionally `RERANK_ENDPOINT` (default: `/rerank`). The adapter accepts the
+common Jina/Cohere-style response shape with `index` and `relevance_score`.
+
 `paper_ingest` indexes a local PDF and `paper_search` returns a serializable
-evidence pack. Heavy dependencies and models load lazily, so importing the base
-SDK does not require Docling, Milvus, or sentence-transformers.
+evidence pack. Embeddings, reranking, and VLM inference use API adapters; no
+model weights are loaded into the agent process.
+
+## Multimodal RAG (Stage 4)
+
+Stage four adds visual evidence without coupling the core retrieval service to a
+specific PDF renderer or vision model:
+
+```text
+visual query -> figure/table/mixed retrieval -> source-element backtrace
+             -> Docling image or PyMuPDF bbox crop -> fallback policy
+             -> optional OpenAI-compatible VLM -> structured observations
+```
+
+`PDFRegionRenderer` explicitly converts Docling bottom-left coordinates to
+PyMuPDF top-left coordinates. `PDFVisualAssetResolver` reuses exported figures
+when possible and only crops the source PDF when an image is missing. Generated
+assets keep page, bbox, dimensions, caption, and parent context.
+
+```python
+from science_agent.infra.visual_assets import PDFVisualAssetResolver
+from science_agent.infra.vlm import OpenAIVisionProvider
+from science_agent.rag.multimodal import FigureSearchService
+
+figure_search = FigureSearchService(
+    retrieval=retrieval,
+    paper_store=corpus,
+    asset_resolver=PDFVisualAssetResolver(),
+    vlm=OpenAIVisionProvider(model="gpt-4.1-mini"),
+)
+tools = register_rag_tools(
+    ToolRegistry(),
+    ingestion=ingestion,
+    retrieval=retrieval,
+    figure_search=figure_search,
+)
+```
+
+The resulting `paper_figure_search` tool accepts `vlm_mode="auto"`, `"always"`,
+or `"never"`. Auto mode invokes the VLM for explicit visual questions or when
+captions do not contain enough information. VLM output is query-scoped evidence
+and is not written back into the Milvus corpus.
+
+Configure an OpenAI-compatible vision endpoint with `VLM_API_KEY`, `VLM_MODEL`,
+and `VLM_BASE_URL`. The provider falls back to the corresponding `OPENAI_*`
+variables when dedicated VLM settings are absent.
 
 ## Development Commands
 

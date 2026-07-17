@@ -1,7 +1,10 @@
 from dataclasses import replace
+import json
 
+import httpx
 import pytest
 
+from science_agent.infra.rerankers import APIReranker
 from science_agent.rag.chunking import PaperChunker
 from science_agent.rag.retrieval import RetrievalService, reciprocal_rank_fusion
 from science_agent.rag.routing import classify_section, route_query
@@ -73,6 +76,38 @@ def test_rrf_fuses_duplicate_chunks_by_rank():
 
     assert [hit.chunk_id for hit in fused] == ["b", "a", "c"]
     assert fused[0].score == pytest.approx(1 / 12 + 1 / 11)
+
+
+@pytest.mark.asyncio
+async def test_api_reranker_uses_remote_scores():
+    hits = [
+        RetrievalHit(chunk_id="a", score=0.1, text="first"),
+        RetrievalHit(chunk_id="b", score=0.2, text="second"),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["documents"] == ["first", "second"]
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"index": 1, "relevance_score": 0.95},
+                    {"index": 0, "relevance_score": 0.4},
+                ]
+            },
+            request=request,
+        )
+
+    reranker = APIReranker(
+        api_key="test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await reranker.rerank("query", hits, limit=2)
+
+    assert [hit.chunk_id for hit in result] == ["b", "a"]
+    assert [hit.score for hit in result] == [0.95, 0.4]
 
 
 class FakeEmbeddings:

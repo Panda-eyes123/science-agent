@@ -2,6 +2,7 @@
 
 from hashlib import sha1
 from pathlib import Path
+import re
 from typing import Any, Iterable
 
 from science_agent.rag.routing import classify_section
@@ -78,19 +79,25 @@ class DoclingPDFParser:
                 active_section = "background"
             if not text and not table_markdown and element_type not in {"figure", "formula"}:
                 continue
-            page_no, bbox = self._provenance(item)
+            page_no, bbox, coord_origin = self._provenance(item)
             raw_payload: dict[str, Any] = {
                 "parser": "docling",
                 "docling_type": type(item).__name__,
             }
+            if coord_origin:
+                raw_payload["coord_origin"] = coord_origin
             caption = self._caption(item)
             if caption:
                 raw_payload["caption"] = caption
-            image_path = (
-                self._write_figure_image(item, document, paper_id, ordinal)
-                if element_type == "figure"
-                else None
-            )
+            image_path = None
+            if element_type == "figure":
+                image_path, image_width, image_height = self._write_figure_image(
+                    item, document, paper_id, ordinal
+                )
+                if image_width is not None:
+                    raw_payload["image_width"] = image_width
+                if image_height is not None:
+                    raw_payload["image_height"] = image_height
             elements.append(
                 SourceElement(
                     element_id=f"{paper_id}:docling:{ordinal}",
@@ -127,7 +134,10 @@ class DoclingPDFParser:
                     element_type=element_type,
                     section_kind=active_section,
                     text=text,
-                    raw_payload={"parser": "pymupdf"},
+                    raw_payload={
+                        "parser": "pymupdf",
+                        "coord_origin": "top_left",
+                    },
                 )
             )
         return elements
@@ -161,16 +171,26 @@ class DoclingPDFParser:
         return "paragraph"
 
     @staticmethod
-    def _provenance(item: object) -> tuple[int | None, tuple[float, float, float, float] | None]:
+    def _provenance(
+        item: object,
+    ) -> tuple[
+        int | None,
+        tuple[float, float, float, float] | None,
+        str | None,
+    ]:
         provenance = getattr(item, "prov", None) or []
         first = provenance[0] if provenance else None
         if first is None:
-            return None, None
+            return None, None, None
         bbox = getattr(first, "bbox", None)
         coordinates = None
+        coord_origin = None
         if bbox is not None:
             coordinates = tuple(float(getattr(bbox, key)) for key in ("l", "t", "r", "b"))
-        return getattr(first, "page_no", None), coordinates
+            origin = getattr(bbox, "coord_origin", None)
+            if origin is not None:
+                coord_origin = str(getattr(origin, "value", origin)).lower()
+        return getattr(first, "page_no", None), coordinates, coord_origin
 
     @staticmethod
     def _caption(item: object) -> str:
@@ -197,23 +217,29 @@ class DoclingPDFParser:
 
     def _write_figure_image(
         self, item: object, document: object, paper_id: str, ordinal: int
-    ) -> str | None:
+    ) -> tuple[str | None, int | None, int | None]:
         """Persist Docling's rendered figure only when the item exposes one."""
         get_image = getattr(item, "get_image", None)
         if not callable(get_image):
-            return None
+            return None, None, None
         try:
             image = get_image(document)
         except (AttributeError, TypeError, ValueError):
-            return None
+            return None, None, None
         if image is None:
-            return None
-        target_dir = self.artifact_dir / paper_id
+            return None, None, None
+        safe_paper_id = re.sub(r"[^A-Za-z0-9._-]", "_", paper_id).strip(".")
+        safe_paper_id = safe_paper_id or self._paper_id(Path(paper_id))
+        target_dir = self.artifact_dir / safe_paper_id
         target_dir.mkdir(parents=True, exist_ok=True)
-        relative = Path(paper_id) / f"figure-{ordinal}.png"
+        relative = Path(safe_paper_id) / f"figure-{ordinal}.png"
         target = self.artifact_dir / relative
         try:
             image.save(target)
         except (AttributeError, OSError, ValueError):
-            return None
-        return str(relative).replace("\\", "/")
+            return None, None, None
+        return (
+            str(relative).replace("\\", "/"),
+            getattr(image, "width", None),
+            getattr(image, "height", None),
+        )

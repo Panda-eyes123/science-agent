@@ -1,6 +1,7 @@
 """Milvus-backed paper corpus using native BM25 and dense vector search."""
 
 import asyncio
+import json
 from dataclasses import asdict
 from typing import Any
 
@@ -46,8 +47,11 @@ class MilvusCorpusStore:
         *,
         limit: int,
         section_kind: str | None = None,
+        chunk_types: tuple[str, ...] | None = None,
     ) -> list[RetrievalHit]:
-        return await self._run(self._search_bm25, query, limit, section_kind)
+        return await self._run(
+            self._search_bm25, query, limit, section_kind, chunk_types
+        )
 
     async def search_dense(
         self,
@@ -55,16 +59,22 @@ class MilvusCorpusStore:
         *,
         limit: int,
         section_kind: str | None = None,
+        chunk_types: tuple[str, ...] | None = None,
     ) -> list[RetrievalHit]:
         if len(vector) != self.embedding_dim:
             raise ValueError(f"Expected a {self.embedding_dim}-dimension query vector.")
-        return await self._run(self._search_dense, vector, limit, section_kind)
+        return await self._run(
+            self._search_dense, vector, limit, section_kind, chunk_types
+        )
 
     async def get_parent_chunks(self, chunk_ids: list[str]) -> list[ParentChunk]:
         return await self._run(self._get_records, "parent", chunk_ids, ParentChunk)
 
     async def get_source_elements(self, element_ids: list[str]) -> list[SourceElement]:
         return await self._run(self._get_records, "element", element_ids, SourceElement)
+
+    async def get_papers(self, paper_ids: list[str]) -> list[PaperDocument]:
+        return await self._run(self._get_records, "paper", paper_ids, PaperDocument)
 
     async def _run(self, function: Any, *args: Any) -> Any:
         return await asyncio.to_thread(function, *args)
@@ -99,7 +109,13 @@ class MilvusCorpusStore:
         ]
         client.upsert(collection_name=self.records_collection, data=records)
 
-    def _search_bm25(self, query: str, limit: int, section_kind: str | None) -> list[RetrievalHit]:
+    def _search_bm25(
+        self,
+        query: str,
+        limit: int,
+        section_kind: str | None,
+        chunk_types: tuple[str, ...] | None,
+    ) -> list[RetrievalHit]:
         client = self._ensure_ready()
         return self._hits(
             client.search(
@@ -107,12 +123,18 @@ class MilvusCorpusStore:
                 data=[query],
                 anns_field="sparse_vector",
                 limit=limit,
-                filter=self._section_filter(section_kind),
+                filter=self._search_filter(section_kind, chunk_types),
                 output_fields=self._chunk_fields(),
             )
         )
 
-    def _search_dense(self, vector: list[float], limit: int, section_kind: str | None) -> list[RetrievalHit]:
+    def _search_dense(
+        self,
+        vector: list[float],
+        limit: int,
+        section_kind: str | None,
+        chunk_types: tuple[str, ...] | None,
+    ) -> list[RetrievalHit]:
         client = self._ensure_ready()
         return self._hits(
             client.search(
@@ -120,7 +142,7 @@ class MilvusCorpusStore:
                 data=[vector],
                 anns_field="dense_vector",
                 limit=limit,
-                filter=self._section_filter(section_kind),
+                filter=self._search_filter(section_kind, chunk_types),
                 output_fields=self._chunk_fields(),
             )
         )
@@ -198,8 +220,16 @@ class MilvusCorpusStore:
         return {"record_id": record_id, "record_type": record_type, "payload": asdict(payload)}
 
     @staticmethod
-    def _section_filter(section_kind: str | None) -> str:
-        return f'section_kind == "{section_kind}"' if section_kind else ""
+    def _search_filter(
+        section_kind: str | None, chunk_types: tuple[str, ...] | None
+    ) -> str:
+        conditions: list[str] = []
+        if section_kind:
+            conditions.append(f'section_kind == {json.dumps(section_kind)}')
+        if chunk_types:
+            values = json.dumps(list(chunk_types))
+            conditions.append(f'metadata["chunk_type"] in {values}')
+        return " and ".join(conditions)
 
     @staticmethod
     def _chunk_fields() -> list[str]:

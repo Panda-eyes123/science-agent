@@ -57,6 +57,11 @@ class Tool:
                 raise ToolExecutionError(
                     f"Tool '{self.name}' argument '{key}' must be {expected}."
                 )
+            allowed = schema.get("enum")
+            if allowed is not None and arguments[key] not in allowed:
+                raise ToolExecutionError(
+                    f"Tool '{self.name}' argument '{key}' must be one of {allowed}."
+                )
 
     def to_openai_tool(self) -> dict[str, Any]:
         return {

@@ -56,13 +56,17 @@ class RetrievalService:
         *,
         limit: int | None = None,
         section_kind: str | None = None,
+        chunk_types: tuple[str, ...] | None = None,
     ) -> EvidencePack:
         requested_limit = limit or self.result_limit
         route = section_kind or route_query(query)
         query_vector = await self.embeddings.embed_query(query)
+        search_options = {"limit": self.recall_limit, "section_kind": route}
+        if chunk_types:
+            search_options["chunk_types"] = chunk_types
         bm25_hits, dense_hits = await asyncio.gather(
-            self.corpus.search_bm25(query, limit=self.recall_limit, section_kind=route),
-            self.corpus.search_dense(query_vector, limit=self.recall_limit, section_kind=route),
+            self.corpus.search_bm25(query, **search_options),
+            self.corpus.search_dense(query_vector, **search_options),
         )
         fused = reciprocal_rank_fusion([bm25_hits, dense_hits], limit=self.fusion_limit)
         reranked = await self.reranker.rerank(query, fused, limit=requested_limit)
