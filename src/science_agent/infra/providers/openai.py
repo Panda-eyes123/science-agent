@@ -33,15 +33,15 @@ class OpenAIProvider:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = DEFAULT_MODEL,
-        base_url: str = "https://api.openai.com/v1",
+        model: str | None = None,
+        base_url: str | None = None,
         timeout: float = 60.0,
         retry: RetryConfig | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.model = model
-        self.base_url = base_url.rstrip("/")
+        self.model = model or DEFAULT_MODEL
+        self.base_url = (base_url or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
         self.timeout = timeout
         self.retry = retry or RetryConfig()
         self.transport = transport

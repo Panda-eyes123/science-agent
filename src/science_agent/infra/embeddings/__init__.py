@@ -1,6 +1,6 @@
 """Embedding provider contracts."""
 
 from .base import EmbeddingProvider
-from .sentence_transformer import SentenceTransformerEmbeddings
+from .openai_embeddings import OpenAIEmbeddingProvider
 
-__all__ = ["EmbeddingProvider", "SentenceTransformerEmbeddings"]
+__all__ = ["EmbeddingProvider", "OpenAIEmbeddingProvider"]
