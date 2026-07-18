@@ -5,7 +5,13 @@ from .core.template import AgentTemplateDefinition, AgentTemplateRegistry
 from .core.todo import TodoItem, TodoService
 from .infra.providers.base import ModelProvider
 from .infra.sandbox import LocalSandbox, SandboxResult
-from .infra.store.json_store import JSONStore
+from .infra.store import (
+    EventSequenceConflictError,
+    JSONStore,
+    PostgresStore,
+    StoreError,
+    migrate_postgres,
+)
 from .tools.base import Tool, ToolExecutionContext
 from .tools.registry import ToolRegistry
 from .types import ModelResponse, ToolCallRequest
@@ -35,17 +41,21 @@ __all__ = [
     "AgentConfig",
     "AgentTemplateDefinition",
     "AgentTemplateRegistry",
+    "EventSequenceConflictError",
     "JSONStore",
     "LocalSandbox",
     "ModelProvider",
     "ModelResponse",
     "OpenAIProvider",
+    "PostgresStore",
     "RetryConfig",
     "SandboxResult",
+    "StoreError",
     "TodoItem",
     "TodoService",
     "Tool",
     "ToolCallRequest",
     "ToolExecutionContext",
     "ToolRegistry",
+    "migrate_postgres",
 ]

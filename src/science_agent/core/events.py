@@ -12,11 +12,17 @@ from science_agent.types import AgentChannel, AgentEventEnvelope
 class EventBus:
     """Broadcasts runtime events to async subscribers."""
 
-    def __init__(self) -> None:
-        self._seq = 0
+    def __init__(self, initial_seq: int = 0) -> None:
+        self._seq = initial_seq
         self._subscribers: dict[
             AgentChannel, list[asyncio.Queue[AgentEventEnvelope]]
         ] = defaultdict(list)
+
+    def resume_from(self, sequence: int) -> None:
+        """Continue persisted event numbering before any new event is emitted."""
+        if sequence < self._seq:
+            raise ValueError("Event sequence cannot move backwards.")
+        self._seq = sequence
 
     async def emit(self, channel: AgentChannel, event: dict) -> AgentEventEnvelope:
         self._seq += 1

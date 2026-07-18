@@ -3,10 +3,34 @@
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
-from science_agent.types import AgentChannel, AgentEventEnvelope, AgentInfo, Message, ToolCallRecord
+from science_agent.types import (
+    AgentChannel,
+    AgentEventEnvelope,
+    AgentInfo,
+    Message,
+    ToolCallRecord,
+)
 
 
 class Store(Protocol):
+    """Persistence contract used by the agent runtime.
+
+    Event writes must be idempotent for identical ``(agent_id, seq)`` values and
+    must raise ``EventSequenceConflictError`` when the stored content differs.
+    Implementations should return events ordered by ascending sequence number.
+    The runtime expects one active writer for each agent id; conflict detection
+    is a safety boundary, not a distributed scheduling mechanism.
+    """
+
+    async def save_agent_state(
+        self,
+        agent_id: str,
+        *,
+        messages: list[Message],
+        records: list[ToolCallRecord],
+        info: AgentInfo,
+        todos: list[dict],
+    ) -> None: ...
     async def save_messages(self, agent_id: str, messages: list[Message]) -> None: ...
     async def load_messages(self, agent_id: str) -> list[Message]: ...
     async def save_tool_call_records(
@@ -23,6 +47,7 @@ class Store(Protocol):
         since: int | None = None,
         channel: AgentChannel | None = None,
     ) -> AsyncIterator[AgentEventEnvelope]: ...
+    async def last_event_seq(self, agent_id: str) -> int: ...
     async def save_info(self, agent_id: str, info: AgentInfo) -> None: ...
     async def load_info(self, agent_id: str) -> AgentInfo | None: ...
     async def save_todos(self, agent_id: str, todos: list[dict]) -> None: ...

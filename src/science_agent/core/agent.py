@@ -70,6 +70,7 @@ class Agent:
     ) -> "Agent":
         agent = cls(config, templates)
         if agent.store is not None:
+            agent.events.resume_from(await agent.store.last_event_seq(agent.agent_id))
             agent.messages = await agent.store.load_messages(agent.agent_id)
             agent.tool_records = list(
                 await agent.store.load_tool_call_records(agent.agent_id)
@@ -155,7 +156,11 @@ class Agent:
         except Exception as exc:
             await self._emit(
                 "monitor",
-                {"type": "error", "message": str(exc), "error_type": type(exc).__name__},
+                {
+                    "type": "error",
+                    "message": str(exc),
+                    "error_type": type(exc).__name__,
+                },
             )
             await self._emit("progress", {"type": "done", "reason": "failed"})
             raise
@@ -198,7 +203,10 @@ class Agent:
     async def _persist_state(self) -> None:
         if self.store is None:
             return
-        await self.store.save_messages(self.agent_id, self.messages)
-        await self.store.save_tool_call_records(self.agent_id, self.tool_records)
-        await self.store.save_info(self.agent_id, self.info)
-        await self.store.save_todos(self.agent_id, self.todo_service.snapshot())
+        await self.store.save_agent_state(
+            self.agent_id,
+            messages=self.messages,
+            records=self.tool_records,
+            info=self.info,
+            todos=self.todo_service.snapshot(),
+        )

@@ -2,7 +2,7 @@
 
 `science-agent` is an alpha-stage Python SDK for building event-driven research agents.
 It currently focuses on a small but working runtime: async agent execution, event
-subscription, tool calls, local JSON persistence, sandboxed file tools, permission
+subscription, JSON or PostgreSQL persistence, sandboxed file tools, permission
 approval, and an OpenAI-compatible provider adapter.
 
 This project is intentionally still small. The alpha goal is to keep the runtime
@@ -17,6 +17,8 @@ The SDK can already:
 - Register and execute tools through `ToolRegistry`.
 - Use built-in tools for todo management and sandboxed file read/write.
 - Persist messages, tool calls, events, todos, snapshots, and agent info with `JSONStore`.
+- Persist the same Store contract in PostgreSQL with pooled connections, atomic
+  state UPSERTs, versioned migrations, and idempotent event writes.
 - Enforce local sandbox path boundaries for file tools.
 - Request manual tool approval through `control.permission_required`.
 - Call an OpenAI-compatible `/chat/completions` endpoint with categorized provider errors and retry handling.
@@ -26,6 +28,7 @@ The SDK can already:
 - Python `3.13+`
 - `uv`
 - An `OPENAI_API_KEY` only when using the real `OpenAIProvider`
+- Docker Desktop/Engine with Compose for local PostgreSQL and Milvus Standalone
 
 ## Setup
 
@@ -38,6 +41,15 @@ To use the scientific-paper RAG stack, install the optional dependencies:
 
 ```powershell
 uv sync --extra rag --extra dev
+```
+
+For PostgreSQL persistence:
+
+```powershell
+uv sync --extra postgres --extra dev
+Copy-Item docker/.env.example docker/.env
+docker compose --env-file docker/.env -f docker/compose.yaml up -d
+uv run science-agent-migrate
 ```
 
 ## Paper RAG (Stages 1-3)
@@ -57,8 +69,8 @@ PDF -> Docling (PyMuPDF fallback) -> source elements -> parent/child chunks
 - Tables retain Markdown, and figures retain captions, page number, bounding box,
   exported local image paths, and source-element identity for future VLM retrieval.
 - Every child hit links back to a parent chunk and then original source elements.
-- Milvus stores both the indexed child chunks and the provenance records; the
-  default URI may point at a local Milvus Lite database.
+- Milvus Standalone stores both indexed child chunks and provenance records. The
+  default client URI is `http://localhost:19530`.
 
 Minimal wiring:
 
@@ -72,7 +84,6 @@ from science_agent.tools import ToolRegistry, register_rag_tools
 
 embeddings = OpenAIEmbeddingProvider(model="text-embedding-3-small")
 corpus = MilvusCorpusStore(
-    uri="./data/science_rag.db",
     embedding_dim=1536,
 )
 ingestion = PaperIngestionService(
@@ -88,6 +99,9 @@ retrieval = RetrievalService(
 )
 tools = register_rag_tools(ToolRegistry(), ingestion=ingestion, retrieval=retrieval)
 ```
+
+The current project has no Milvus Lite corpus requiring migration. After starting
+Standalone, ingest papers normally into the empty collection.
 
 Configure reranking with `RERANK_API_KEY`, `RERANK_MODEL`, `RERANK_BASE_URL`,
 and optionally `RERANK_ENDPOINT` (default: `/rerank`). The adapter accepts the
@@ -149,6 +163,13 @@ Run the test suite:
 uv run pytest
 ```
 
+Run PostgreSQL integration tests after starting Compose:
+
+```powershell
+$env:POSTGRES_TEST_DSN=$env:POSTGRES_DSN
+uv run pytest tests/integration/test_postgres_store.py
+```
+
 Run lint checks:
 
 ```powershell
@@ -168,6 +189,7 @@ Run the built-in examples:
 uv run python examples\getting_started.py
 uv run python examples\tool_usage.py
 uv run python examples\persistence_resume.py
+uv run python examples\postgres_persistence.py
 ```
 
 ## Local Example
@@ -229,12 +251,46 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+## PostgreSQL Persistence
+
+`PostgresStore` implements the same runtime contract as `JSONStore`. It lazily
+opens a Psycopg 3 async connection pool and automatically applies packaged SQL
+migrations before the first operation. Agent state is committed with one UPSERT
+transaction. Events use `(agent_id, seq)` as their primary key: writing identical
+content twice is idempotent, while reusing a sequence with different content
+raises `EventSequenceConflictError`.
+
+The runtime still expects one active writer for each `agent_id`. PostgreSQL
+detects conflicting event sequences, but this phase does not add distributed
+leases or multi-worker scheduling.
+
+```python
+from science_agent import PostgresStore
+
+async with PostgresStore() as store:
+    agent = await Agent.create(
+        AgentConfig(
+            template_id="science-assistant",
+            model=provider,
+            store=store,
+            agent_id="stable-agent-id",
+        ),
+        templates,
+    )
+```
+
+Use `uv run science-agent-migrate` for deployment workflows that apply migrations
+before starting the application. `JSONStore` remains available for lightweight,
+single-process development.
+
 ## Tool And Persistence Examples
 
 The repository includes two practical local demos:
 
 - `examples/tool_usage.py`: simulates a model requesting `todo_write`, then persists the agent state in `.demo_store`.
 - `examples/persistence_resume.py`: creates an agent with a fixed `agent_id`, writes state through `JSONStore`, then restores a second agent instance from the same store.
+- `examples/postgres_persistence.py`: performs the same restore flow through
+  `PostgresStore` and its automatic migrations.
 
 These examples use mock providers so they are stable in tests and offline development.
 
@@ -328,7 +384,8 @@ The alpha public exports are:
 
 - `Agent`, `AgentConfig`
 - `AgentTemplateDefinition`, `AgentTemplateRegistry`
-- `JSONStore`
+- `JSONStore`, `PostgresStore`
+- `StoreError`, `EventSequenceConflictError`, `migrate_postgres`
 - `LocalSandbox`, `SandboxResult`
 - `OpenAIProvider`, `RetryConfig`
 - `Tool`, `ToolExecutionContext`, `ToolRegistry`
@@ -343,7 +400,7 @@ research-agent prototypes. It is not production-ready yet.
 Currently supported:
 
 - Single-process async runtime.
-- Local JSON persistence.
+- Local JSON persistence and pooled PostgreSQL persistence.
 - Local sandbox file read/write with path boundary checks.
 - Sequential tool execution.
 - Manual approval flow for tool calls.
@@ -353,7 +410,9 @@ Currently supported:
 Not yet supported:
 
 - Streaming token-by-token provider output.
-- SQLite/PostgreSQL stores.
+- SQLite storage.
+- Distributed locks, agent leases, or multi-writer coordination beyond explicit
+  event-sequence conflict detection.
 - Distributed locks or multi-worker coordination.
 - MCP tools.
 - E2B/OpenSandbox remote sandboxes.

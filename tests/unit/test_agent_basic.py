@@ -13,6 +13,7 @@ from science_agent import (
     ToolRegistry,
 )
 from science_agent.tools.builtin import register_builtin_tools
+from science_agent.types import AgentEventEnvelope
 
 
 class EchoProvider:
@@ -117,3 +118,39 @@ async def test_json_store_round_trips_agent_state(tmp_path):
         "ready",
     ]
     assert restored.info.agent_id == "persisted-agent"
+
+
+@pytest.mark.asyncio
+async def test_restored_agent_continues_persisted_event_sequence(tmp_path):
+    templates = AgentTemplateRegistry()
+    templates.register(
+        AgentTemplateDefinition(id="science", system_prompt="Persist events.")
+    )
+    store = JSONStore(tmp_path)
+    await store.append_event(
+        "event-agent",
+        AgentEventEnvelope(
+            seq=7,
+            timestamp=1.0,
+            channel="monitor",
+            event={"type": "restored"},
+        ),
+    )
+    agent = await Agent.create(
+        AgentConfig(
+            template_id="science",
+            model=EchoProvider(),
+            store=store,
+            tool_registry=ToolRegistry(),
+            agent_id="event-agent",
+        ),
+        templates,
+    )
+
+    await agent.send("continue")
+
+    events = [event async for event in store.read_events("event-agent")]
+    sequences = [event.seq for event in events]
+    assert sequences[0] == 7
+    assert sequences[1] == 8
+    assert sequences == sorted(set(sequences))

@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from science_agent import (
+from science_agent import (  # noqa: E402
     Agent,
     AgentConfig,
     AgentTemplateDefinition,
@@ -21,7 +21,7 @@ from science_agent import (
     OpenAIProvider,
     ToolRegistry,
 )
-from science_agent.tools.builtin import register_builtin_tools
+from science_agent.tools.builtin import register_builtin_tools  # noqa: E402
 
 
 async def main() -> None:

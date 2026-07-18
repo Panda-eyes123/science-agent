@@ -6,15 +6,25 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from pydantic import TypeAdapter
-
 from science_agent.config import DEFAULT_STORE_DIR
-from science_agent.types import AgentChannel, AgentEventEnvelope, AgentInfo, Message, ToolCallRecord
-
-_AGENT_INFO_ADAPTER = TypeAdapter(AgentInfo)
-_EVENT_ENVELOPE_ADAPTER = TypeAdapter(AgentEventEnvelope)
-_MESSAGES_ADAPTER = TypeAdapter(list[Message])
-_TOOL_CALL_RECORDS_ADAPTER = TypeAdapter(list[ToolCallRecord])
+from science_agent.infra.store.errors import EventSequenceConflictError
+from science_agent.infra.store.serialization import (
+    dump_agent_info,
+    dump_event,
+    dump_messages,
+    dump_tool_call_records,
+    load_agent_info,
+    load_event_json,
+    load_messages,
+    load_tool_call_records,
+)
+from science_agent.types import (
+    AgentChannel,
+    AgentEventEnvelope,
+    AgentInfo,
+    Message,
+    ToolCallRecord,
+)
 
 
 class JSONStore:
@@ -23,9 +33,7 @@ class JSONStore:
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def _agent_dir(self, agent_id: str) -> Path:
-        path = self.base_dir / agent_id
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+        return self.base_dir / agent_id
 
     def _write_json(self, path: Path, payload: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -38,28 +46,62 @@ class JSONStore:
             return default
         return json.loads(path.read_text(encoding="utf-8"))
 
+    async def save_agent_state(
+        self,
+        agent_id: str,
+        *,
+        messages: list[Message],
+        records: list[ToolCallRecord],
+        info: AgentInfo,
+        todos: list[dict],
+    ) -> None:
+        """Preserve the Store contract for local development.
+
+        PostgreSQL commits this operation atomically. JSONStore remains a
+        compatibility implementation and can only replace its files one by one.
+        """
+        await self.save_messages(agent_id, messages)
+        await self.save_tool_call_records(agent_id, records)
+        await self.save_info(agent_id, info)
+        await self.save_todos(agent_id, todos)
+
     async def save_messages(self, agent_id: str, messages: list[Message]) -> None:
-        payload = _MESSAGES_ADAPTER.dump_python(messages, mode="json")
+        payload = dump_messages(messages)
         self._write_json(self._agent_dir(agent_id) / "messages.json", payload)
 
     async def load_messages(self, agent_id: str) -> list[Message]:
         rows = self._read_json(self._agent_dir(agent_id) / "messages.json", [])
-        return _MESSAGES_ADAPTER.validate_python(rows)
+        return load_messages(rows)
 
     async def save_tool_call_records(
         self, agent_id: str, records: list[ToolCallRecord]
     ) -> None:
-        payload = _TOOL_CALL_RECORDS_ADAPTER.dump_python(records, mode="json")
+        payload = dump_tool_call_records(records)
         self._write_json(self._agent_dir(agent_id) / "tool_calls.json", payload)
 
     async def load_tool_call_records(self, agent_id: str) -> list[ToolCallRecord]:
         rows = self._read_json(self._agent_dir(agent_id) / "tool_calls.json", [])
-        return _TOOL_CALL_RECORDS_ADAPTER.validate_python(rows)
+        return load_tool_call_records(rows)
 
     async def append_event(self, agent_id: str, envelope: AgentEventEnvelope) -> None:
         path = self._agent_dir(agent_id) / "events.jsonl"
+        if path.exists():
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    stored = load_event_json(line)
+                    if stored.seq != envelope.seq:
+                        continue
+                    if stored == envelope:
+                        return
+                    raise EventSequenceConflictError(
+                        f"Event sequence {envelope.seq} for agent {agent_id!r} "
+                        "already contains different content."
+                    )
+        path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
-            payload = _EVENT_ENVELOPE_ADAPTER.dump_python(envelope, mode="json")
+            payload = dump_event(envelope)
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     async def read_events(
@@ -76,20 +118,26 @@ class JSONStore:
             for line in handle:
                 if not line.strip():
                     continue
-                envelope = _EVENT_ENVELOPE_ADAPTER.validate_json(line)
+                envelope = load_event_json(line)
                 if since is not None and envelope.seq <= since:
                     continue
                 if channel is not None and envelope.channel != channel:
                     continue
                 yield envelope
 
+    async def last_event_seq(self, agent_id: str) -> int:
+        last_seq = 0
+        async for envelope in self.read_events(agent_id):
+            last_seq = max(last_seq, envelope.seq)
+        return last_seq
+
     async def save_info(self, agent_id: str, info: AgentInfo) -> None:
-        payload = _AGENT_INFO_ADAPTER.dump_python(info, mode="json")
+        payload = dump_agent_info(info)
         self._write_json(self._agent_dir(agent_id) / "info.json", payload)
 
     async def load_info(self, agent_id: str) -> AgentInfo | None:
         row = self._read_json(self._agent_dir(agent_id) / "info.json", None)
-        return _AGENT_INFO_ADAPTER.validate_python(row) if row else None
+        return load_agent_info(row) if row else None
 
     async def save_todos(self, agent_id: str, todos: list[dict]) -> None:
         self._write_json(self._agent_dir(agent_id) / "todos.json", todos)
@@ -120,7 +168,9 @@ class JSONStore:
     async def list(self, prefix: str | None = None) -> list[str]:
         if not self.base_dir.exists():
             return []
-        agent_ids = sorted(item.name for item in self.base_dir.iterdir() if item.is_dir())
+        agent_ids = sorted(
+            item.name for item in self.base_dir.iterdir() if item.is_dir()
+        )
         if prefix is None:
             return agent_ids
         return [agent_id for agent_id in agent_ids if agent_id.startswith(prefix)]

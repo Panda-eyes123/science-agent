@@ -5,21 +5,28 @@ import json
 from dataclasses import asdict
 from typing import Any
 
-from science_agent.rag.types import ChildChunk, ParentChunk, PaperDocument, RetrievalHit, SourceElement
+from science_agent.config import DEFAULT_MILVUS_COLLECTION, DEFAULT_MILVUS_URI
+from science_agent.rag.types import (
+    ChildChunk,
+    ParentChunk,
+    PaperDocument,
+    RetrievalHit,
+    SourceElement,
+)
 
 
 class MilvusCorpusStore:
     """Persist paper provenance and child vectors in local or remote Milvus.
 
-    The vector collection needs Milvus 2.5+ native BM25 functions. A local URI such
-    as ``./data/science_rag.db`` starts Milvus Lite when pymilvus supports it.
+    The vector collection needs Milvus 2.5+ native BM25 functions. The default URI
+    points at the Docker Compose Milvus Standalone service exposed on localhost.
     """
 
     def __init__(
         self,
         *,
-        uri: str = "./data/science_rag.db",
-        collection_name: str = "paper_chunks",
+        uri: str = DEFAULT_MILVUS_URI,
+        collection_name: str = DEFAULT_MILVUS_COLLECTION,
         embedding_dim: int,
     ) -> None:
         self.uri = uri
@@ -39,7 +46,9 @@ class MilvusCorpusStore:
     ) -> None:
         if len(children) != len(embeddings):
             raise ValueError("Every child chunk must have exactly one dense embedding.")
-        await self._run(self._upsert_paper, paper, elements, parents, children, embeddings)
+        await self._run(
+            self._upsert_paper, paper, elements, parents, children, embeddings
+        )
 
     async def search_bm25(
         self,
@@ -104,7 +113,10 @@ class MilvusCorpusStore:
             client.upsert(collection_name=self.collection_name, data=chunk_rows)
         records = [
             self._record("paper", paper.paper_id, paper),
-            *[self._record("element", element.element_id, element) for element in elements],
+            *[
+                self._record("element", element.element_id, element)
+                for element in elements
+            ],
             *[self._record("parent", parent.chunk_id, parent) for parent in parents],
         ]
         client.upsert(collection_name=self.records_collection, data=records)
@@ -151,7 +163,9 @@ class MilvusCorpusStore:
         if not ids:
             return []
         client = self._ensure_ready()
-        escaped = ", ".join(f'"{item.replace("\\", "\\\\").replace(chr(34), "\\\"")}"' for item in ids)
+        escaped = ", ".join(
+            f'"{item.replace("\\", "\\\\").replace(chr(34), '\\"')}"' for item in ids
+        )
         rows = client.query(
             collection_name=self.records_collection,
             filter=f'record_type == "{record_type}" and record_id in [{escaped}]',
@@ -171,10 +185,16 @@ class MilvusCorpusStore:
             ) from exc
         if not client.has_collection(collection_name=self.collection_name):
             schema = client.create_schema(auto_id=False, enable_dynamic_field=False)
-            schema.add_field("chunk_id", DataType.VARCHAR, is_primary=True, max_length=128)
-            schema.add_field("text", DataType.VARCHAR, max_length=65535, enable_analyzer=True)
+            schema.add_field(
+                "chunk_id", DataType.VARCHAR, is_primary=True, max_length=128
+            )
+            schema.add_field(
+                "text", DataType.VARCHAR, max_length=65535, enable_analyzer=True
+            )
             schema.add_field("sparse_vector", DataType.SPARSE_FLOAT_VECTOR)
-            schema.add_field("dense_vector", DataType.FLOAT_VECTOR, dim=self.embedding_dim)
+            schema.add_field(
+                "dense_vector", DataType.FLOAT_VECTOR, dim=self.embedding_dim
+            )
             schema.add_field("paper_id", DataType.VARCHAR, max_length=128)
             schema.add_field("parent_chunk_id", DataType.VARCHAR, max_length=128)
             schema.add_field("section_kind", DataType.VARCHAR, max_length=32)
@@ -188,8 +208,12 @@ class MilvusCorpusStore:
                 )
             )
             index = client.prepare_index_params()
-            index.add_index("dense_vector", index_type="AUTOINDEX", metric_type="COSINE")
-            index.add_index("sparse_vector", index_type="SPARSE_INVERTED_INDEX", metric_type="BM25")
+            index.add_index(
+                "dense_vector", index_type="AUTOINDEX", metric_type="COSINE"
+            )
+            index.add_index(
+                "sparse_vector", index_type="SPARSE_INVERTED_INDEX", metric_type="BM25"
+            )
             client.create_collection(
                 collection_name=self.collection_name,
                 schema=schema,
@@ -197,10 +221,14 @@ class MilvusCorpusStore:
             )
         if not client.has_collection(collection_name=self.records_collection):
             schema = client.create_schema(auto_id=False, enable_dynamic_field=False)
-            schema.add_field("record_id", DataType.VARCHAR, is_primary=True, max_length=128)
+            schema.add_field(
+                "record_id", DataType.VARCHAR, is_primary=True, max_length=128
+            )
             schema.add_field("record_type", DataType.VARCHAR, max_length=32)
             schema.add_field("payload", DataType.JSON)
-            client.create_collection(collection_name=self.records_collection, schema=schema)
+            client.create_collection(
+                collection_name=self.records_collection, schema=schema
+            )
         self._ready = True
         return client
 
@@ -217,7 +245,11 @@ class MilvusCorpusStore:
 
     @staticmethod
     def _record(record_type: str, record_id: str, payload: Any) -> dict[str, Any]:
-        return {"record_id": record_id, "record_type": record_type, "payload": asdict(payload)}
+        return {
+            "record_id": record_id,
+            "record_type": record_type,
+            "payload": asdict(payload),
+        }
 
     @staticmethod
     def _search_filter(
@@ -225,7 +257,7 @@ class MilvusCorpusStore:
     ) -> str:
         conditions: list[str] = []
         if section_kind:
-            conditions.append(f'section_kind == {json.dumps(section_kind)}')
+            conditions.append(f"section_kind == {json.dumps(section_kind)}")
         if chunk_types:
             values = json.dumps(list(chunk_types))
             conditions.append(f'metadata["chunk_type"] in {values}')
@@ -233,7 +265,14 @@ class MilvusCorpusStore:
 
     @staticmethod
     def _chunk_fields() -> list[str]:
-        return ["chunk_id", "text", "paper_id", "parent_chunk_id", "section_kind", "metadata"]
+        return [
+            "chunk_id",
+            "text",
+            "paper_id",
+            "parent_chunk_id",
+            "section_kind",
+            "metadata",
+        ]
 
     @staticmethod
     def _hits(result: list[list[dict[str, Any]]]) -> list[RetrievalHit]:
