@@ -8,6 +8,14 @@ approval, and an OpenAI-compatible provider adapter.
 This project is intentionally still small. The alpha goal is to keep the runtime
 easy to inspect while the core contracts settle.
 
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [Configuration reference](docs/configuration.md)
+- [Storage guide](docs/storage.md)
+- [Infrastructure handoff](docs/infrastructure.md)
+- [Verification status](docs/verification.md)
+
 ## Current Status
 
 The SDK can already:
@@ -28,7 +36,8 @@ The SDK can already:
 - Python `3.13+`
 - `uv`
 - An `OPENAI_API_KEY` only when using the real `OpenAIProvider`
-- Docker Desktop/Engine with Compose for local PostgreSQL and Milvus Standalone
+- Docker Desktop/Engine with Compose only when running the supplied local
+  PostgreSQL and Milvus Standalone infrastructure
 
 ## Setup
 
@@ -43,14 +52,23 @@ To use the scientific-paper RAG stack, install the optional dependencies:
 uv sync --extra rag --extra dev
 ```
 
-For PostgreSQL persistence:
+Install the PostgreSQL dependency without starting infrastructure:
 
 ```powershell
 uv sync --extra postgres --extra dev
+```
+
+Operators who want the supplied local infrastructure can then run:
+
+```powershell
 Copy-Item docker/.env.example docker/.env
 docker compose --env-file docker/.env -f docker/compose.yaml up -d
 uv run science-agent-migrate
 ```
+
+The SDK reads process environment variables; it does not automatically load the
+root `.env` file. See the [configuration reference](docs/configuration.md) for
+the complete variable and connection contract.
 
 ## Paper RAG (Stages 1-3)
 
@@ -166,7 +184,7 @@ uv run pytest
 Run PostgreSQL integration tests after starting Compose:
 
 ```powershell
-$env:POSTGRES_TEST_DSN=$env:POSTGRES_DSN
+$env:POSTGRES_TEST_DSN="postgresql://science_agent:science-agent-dev-password@localhost:5432/science_agent"
 uv run pytest tests/integration/test_postgres_store.py
 ```
 
@@ -283,9 +301,12 @@ Use `uv run science-agent-migrate` for deployment workflows that apply migration
 before starting the application. `JSONStore` remains available for lightweight,
 single-process development.
 
+See the [storage guide](docs/storage.md) for connection lifecycle, schema,
+transaction behavior, event ordering, and failure semantics.
+
 ## Tool And Persistence Examples
 
-The repository includes two practical local demos:
+The repository includes three practical local demos:
 
 - `examples/tool_usage.py`: simulates a model requesting `todo_write`, then persists the agent state in `.demo_store`.
 - `examples/persistence_resume.py`: creates an agent with a fixed `agent_id`, writes state through `JSONStore`, then restores a second agent instance from the same store.
@@ -375,7 +396,7 @@ async for envelope in agent.subscribe(["control", "progress"]):
             await envelope.event["respond"]("deny", note="tool not allowed")
 ```
 
-Persisted control events are sanitized before being written to `JSONStore`, so the
+Persisted control events are sanitized before being written to a Store, so the
 runtime callback is available to subscribers but is not serialized to disk.
 
 ## Public API Surface
@@ -413,7 +434,6 @@ Not yet supported:
 - SQLite storage.
 - Distributed locks, agent leases, or multi-writer coordination beyond explicit
   event-sequence conflict detection.
-- Distributed locks or multi-worker coordination.
 - MCP tools.
 - E2B/OpenSandbox remote sandboxes.
 - Full breakpoint/resume state machine.
@@ -432,7 +452,10 @@ src/science_agent/
   tools/             Tool primitives, registry, built-in tools
   utils/             Small utility helpers
 tests/unit/          Unit tests for runtime, store, tools, provider behavior
+tests/integration/   Tests requiring explicitly configured external services
 examples/            Local runnable examples
+docker/              Optional local PostgreSQL and Milvus infrastructure
+docs/                Configuration, storage, infrastructure, verification guides
 ```
 
 ## Alpha Roadmap
