@@ -1,6 +1,7 @@
 """Scientific paper RAG contracts and orchestration helpers."""
 
 from .chunking import PaperChunker
+from .ports import CorpusStore
 from .retrieval import RetrievalService, reciprocal_rank_fusion
 from .routing import classify_section, route_query
 from .service import PaperIngestionService
@@ -16,6 +17,7 @@ from .types import (
     ChildChunk,
     EvidencePack,
     PaperDocument,
+    PaperIngestionResult,
     ParentChunk,
     RetrievalHit,
     SourceElement,
@@ -23,11 +25,13 @@ from .types import (
 
 __all__ = [
     "ChildChunk",
+    "CorpusStore",
     "EvidencePack",
     "FigureEvidencePack",
     "FigureSearchService",
     "PaperChunker",
     "PaperDocument",
+    "PaperIngestionResult",
     "PaperIngestionService",
     "ParentChunk",
     "RetrievalHit",

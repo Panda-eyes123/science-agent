@@ -52,6 +52,7 @@ process.
 | `POSTGRES_TEST_DSN` | No implicit test activation | Enables the live PostgreSQL integration test |
 | `MILVUS_URI` | `http://localhost:19530` | Milvus Standalone endpoint |
 | `MILVUS_COLLECTION_NAME` | `paper_chunks` | Base paper chunk collection name |
+| `WIKI_MILVUS_COLLECTION_NAME` | `wiki_pages` | Independent Wiki page index collection |
 
 The corpus implementation derives a provenance collection named
 `<MILVUS_COLLECTION_NAME>_records`.

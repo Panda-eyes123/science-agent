@@ -12,6 +12,8 @@ applications that integrate persistence or paper RAG infrastructure.
   lifecycle, migrations, schema, event ordering, and failure semantics.
 - [`infrastructure.md`](infrastructure.md): PostgreSQL and Milvus Standalone
   Compose services, operator commands, volumes, and empty-corpus startup.
+- [`wiki.md`](wiki.md): raw-ingest lifecycle, Wiki changesets, Markdown
+  persistence, source citations, and independent index projections.
 - [`verification.md`](verification.md): completed repository checks, unverified
   external-service checks, and a downstream operator checklist.
 
@@ -20,4 +22,3 @@ applications that integrate persistence or paper RAG infrastructure.
 These documents describe an SDK handoff. The repository does not currently ship
 a hosted API, application Docker image, deployment automation, distributed Agent
 leases, or production backup and secret-management systems.
-

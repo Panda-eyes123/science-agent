@@ -15,9 +15,17 @@ def render_evidence(evidence: EvidencePack, *, max_chars: int = 8000) -> str:
     for hit in evidence.hits:
         parent = evidence.parents.get(hit.parent_chunk_id or "")
         context = parent.text if parent else hit.text
+        source_ids = parent.source_element_ids if parent else []
+        page_range = (
+            f"{parent.page_start}-{parent.page_end}"
+            if parent and parent.page_start is not None and parent.page_end is not None
+            else "unknown"
+        )
         header = (
             f"[{hit.paper_id or 'unknown'} | "
             f"{hit.section_kind or 'other'} | "
+            f"pages={page_range} | "
+            f"elements={','.join(source_ids) or 'unknown'} | "
             f"score={hit.score:.3f}]"
         )
         block = f"{header}\n{context}\n"

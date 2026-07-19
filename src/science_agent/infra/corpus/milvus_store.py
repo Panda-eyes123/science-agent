@@ -44,11 +44,24 @@ class MilvusCorpusStore:
         children: list[ChildChunk],
         embeddings: list[list[float]],
     ) -> None:
+        await self.replace_paper(paper, elements, parents, children, embeddings)
+
+    async def replace_paper(
+        self,
+        paper: PaperDocument,
+        elements: list[SourceElement],
+        parents: list[ParentChunk],
+        children: list[ChildChunk],
+        embeddings: list[list[float]],
+    ) -> None:
         if len(children) != len(embeddings):
             raise ValueError("Every child chunk must have exactly one dense embedding.")
         await self._run(
-            self._upsert_paper, paper, elements, parents, children, embeddings
+            self._replace_paper, paper, elements, parents, children, embeddings
         )
+
+    async def delete_paper(self, paper_id: str) -> None:
+        await self._run(self._delete_paper, paper_id)
 
     async def search_bm25(
         self,
@@ -88,7 +101,7 @@ class MilvusCorpusStore:
     async def _run(self, function: Any, *args: Any) -> Any:
         return await asyncio.to_thread(function, *args)
 
-    def _upsert_paper(
+    def _replace_paper(
         self,
         paper: PaperDocument,
         elements: list[SourceElement],
@@ -97,6 +110,7 @@ class MilvusCorpusStore:
         embeddings: list[list[float]],
     ) -> None:
         client = self._ensure_ready()
+        self._delete_paper(paper.paper_id, client=client)
         chunk_rows = [
             {
                 "chunk_id": child.chunk_id,
@@ -105,7 +119,11 @@ class MilvusCorpusStore:
                 "paper_id": child.paper_id,
                 "parent_chunk_id": child.parent_chunk_id,
                 "section_kind": child.section_kind,
-                "metadata": asdict(child),
+                "metadata": {
+                    **asdict(child),
+                    "content_hash": paper.content_hash,
+                    "source_revision": paper.revision,
+                },
             }
             for child, embedding in zip(children, embeddings, strict=True)
         ]
@@ -120,6 +138,15 @@ class MilvusCorpusStore:
             *[self._record("parent", parent.chunk_id, parent) for parent in parents],
         ]
         client.upsert(collection_name=self.records_collection, data=records)
+
+    def _delete_paper(self, paper_id: str, *, client: Any | None = None) -> None:
+        client = client or self._ensure_ready()
+        value = json.dumps(paper_id)
+        client.delete(collection_name=self.collection_name, filter=f"paper_id == {value}")
+        client.delete(
+            collection_name=self.records_collection,
+            filter=f'payload["paper_id"] == {value}',
+        )
 
     def _search_bm25(
         self,

@@ -9,7 +9,7 @@ requirement for using the core SDK or JSONStore.
 | Service | Responsibility | Host exposure |
 |---|---|---|
 | PostgreSQL | Agent state, event history, and snapshots | `127.0.0.1:5432` by default |
-| Milvus Standalone | Paper chunks, vectors, BM25 data, and provenance | `127.0.0.1:19530` and health port `9091` |
+| Milvus Standalone | Paper chunks, Wiki pages, vectors, BM25 data, and provenance | `127.0.0.1:19530` and health port `9091` |
 | etcd | Internal Milvus metadata | Not exposed |
 | MinIO | Internal Milvus object storage | Not exposed |
 
@@ -87,6 +87,11 @@ application ingests PDFs normally using `paper_ingest` or
 default base collection is `paper_chunks`, configurable through
 `MILVUS_COLLECTION_NAME`.
 
+`MilvusWikiIndex` uses a separate `wiki_pages` collection by default,
+configurable through `WIKI_MILVUS_COLLECTION_NAME`. Markdown remains the
+canonical Wiki representation; the Milvus collection is a rebuildable search
+projection.
+
 ## Application placement
 
 The Compose file intentionally contains infrastructure only. It does not build
@@ -107,4 +112,3 @@ or run the consuming application.
 - Choose application restart and failure policies.
 - Run environment-level integration checks before production use.
 - Add an application image or hosted API if the SDK is not embedded directly.
-

@@ -20,6 +20,7 @@ ElementType = Literal[
     "other",
 ]
 ChunkType = Literal["text", "table", "figure", "formula", "mixed"]
+IngestionStatus = Literal["created", "updated", "unchanged"]
 
 
 @dataclass(slots=True)
@@ -28,6 +29,8 @@ class PaperDocument:
     source_path: str
     title: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    content_hash: str | None = None
+    revision: int = 1
 
 
 @dataclass(slots=True)
@@ -74,6 +77,15 @@ class ChildChunk:
 
 
 @dataclass(slots=True)
+class PaperIngestionResult:
+    paper: PaperDocument
+    elements: list[SourceElement]
+    parents: list[ParentChunk]
+    children: list[ChildChunk]
+    status: IngestionStatus
+
+
+@dataclass(slots=True)
 class RetrievalHit:
     chunk_id: str
     score: float
@@ -91,4 +103,3 @@ class EvidencePack:
     parents: dict[str, ParentChunk]
     source_elements: dict[str, SourceElement]
     route: SectionKind | None = None
-

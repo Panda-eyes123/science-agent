@@ -14,6 +14,7 @@ easy to inspect while the core contracts settle.
 - [Configuration reference](docs/configuration.md)
 - [Storage guide](docs/storage.md)
 - [Infrastructure handoff](docs/infrastructure.md)
+- [Personal Wiki foundation](docs/wiki.md)
 - [Verification status](docs/verification.md)
 
 ## Current Status
@@ -87,6 +88,8 @@ PDF -> Docling (PyMuPDF fallback) -> source elements -> parent/child chunks
 - Tables retain Markdown, and figures retain captions, page number, bounding box,
   exported local image paths, and source-element identity for future VLM retrieval.
 - Every child hit links back to a parent chunk and then original source elements.
+- Re-ingesting unchanged content is idempotent; changed content receives a new
+  source revision and replaces stale chunks and provenance records.
 - Milvus Standalone stores both indexed child chunks and provenance records. The
   default client URI is `http://localhost:19530`.
 
@@ -128,6 +131,33 @@ common Jina/Cohere-style response shape with `index` and `relevance_score`.
 `paper_ingest` indexes a local PDF and `paper_search` returns a serializable
 evidence pack. Embeddings, reranking, and VLM inference use API adapters; no
 model weights are loaded into the agent process.
+
+## Personal Wiki Foundation (Phases 0-1)
+
+The optional Wiki layer is a durable projection over raw paper evidence. It does
+not replace `RetrievalService` and does not share the paper chunk schema.
+
+```text
+Raw RAG evidence -> validated WikiChangeSet -> Markdown Wiki
+                                          -> independent Wiki index
+```
+
+- `WikiPage`, `WikiClaim`, `SourceRef`, and `WikiLink` preserve stable knowledge
+  identities and claim-level raw citations.
+- `MarkdownWikiRepository` applies revision-checked changesets and writes an
+  audit record for idempotent retries.
+- `MilvusWikiIndex` stores Wiki pages in `wiki_pages`, separate from
+  `paper_chunks`; `InMemoryWikiIndex` supports offline examples and tests.
+- Uncited claims, unsafe page ids, duplicate links, and stale update revisions
+  are rejected before page writes.
+
+Run the offline example:
+
+```powershell
+uv run python examples/wiki_knowledge_layer.py
+```
+
+See the [Wiki foundation guide](docs/wiki.md) for storage and failure semantics.
 
 ## Multimodal RAG (Stage 4)
 
@@ -304,16 +334,19 @@ single-process development.
 See the [storage guide](docs/storage.md) for connection lifecycle, schema,
 transaction behavior, event ordering, and failure semantics.
 
-## Tool And Persistence Examples
+## Tool, Persistence, And Wiki Examples
 
-The repository includes three practical local demos:
+The repository includes four practical local demos:
 
 - `examples/tool_usage.py`: simulates a model requesting `todo_write`, then persists the agent state in `.demo_store`.
 - `examples/persistence_resume.py`: creates an agent with a fixed `agent_id`, writes state through `JSONStore`, then restores a second agent instance from the same store.
 - `examples/postgres_persistence.py`: performs the same restore flow through
   `PostgresStore` and its automatic migrations.
+- `examples/wiki_knowledge_layer.py`: applies cited Wiki changes, writes
+  Markdown pages, links concepts, and searches an offline index.
 
-These examples use mock providers so they are stable in tests and offline development.
+These examples use mock providers or in-memory adapters so they remain stable
+for tests and offline development.
 
 ## Real OpenAI Example
 
@@ -413,6 +446,10 @@ The alpha public exports are:
 - `TodoItem`, `TodoService`
 - `ModelProvider`, `ModelResponse`, `ToolCallRequest`
 
+The `science_agent.wiki` namespace additionally exports the Wiki page, claim,
+link, source-reference, changeset, validation, and service contracts. Concrete
+Markdown and index adapters live under `science_agent.infra.wiki`.
+
 ## Capability Boundaries
 
 This alpha is useful for local development, SDK contract exploration, and small
@@ -448,6 +485,8 @@ Not yet supported:
 src/science_agent/
   core/              Agent runtime, events, templates, todos
   agent_runtime/     Tool execution, permissions, approval coordination
+  rag/               Raw paper ingestion, retrieval, provenance, multimodal flow
+  wiki/              Durable pages, claims, links, changesets, validation
   infra/             Providers, stores, sandbox implementations
   tools/             Tool primitives, registry, built-in tools
   utils/             Small utility helpers

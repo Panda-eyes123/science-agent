@@ -8,7 +8,9 @@ from science_agent.infra.rerankers import APIReranker
 from science_agent.rag.chunking import PaperChunker
 from science_agent.rag.retrieval import RetrievalService, reciprocal_rank_fusion
 from science_agent.rag.routing import classify_section, route_query
+from science_agent.rag.service import PaperIngestionService
 from science_agent.rag.types import (
+    PaperDocument,
     ParentChunk,
     RetrievalHit,
     SourceElement,
@@ -197,3 +199,60 @@ async def test_paper_search_tool_returns_serializable_evidence():
     assert result["route"] == "method"
     assert "Parent context" in result["evidence"]
     assert "paper-1" in result["evidence"]
+    assert "elements=element-1" in result["evidence"]
+
+
+class LifecycleParser:
+    def parse(self, path, *, paper_id=None):
+        text = path.read_text(encoding="utf-8")
+        resolved_id = paper_id or "paper-lifecycle"
+        return (
+            PaperDocument(paper_id=resolved_id, source_path=str(path)),
+            [
+                SourceElement(
+                    element_id=f"{resolved_id}:element:1",
+                    paper_id=resolved_id,
+                    page_no=1,
+                    bbox=None,
+                    element_type="paragraph",
+                    section_kind="other",
+                    text=text,
+                )
+            ],
+        )
+
+
+class LifecycleCorpus:
+    def __init__(self):
+        self.paper = None
+        self.replace_calls = 0
+
+    async def get_papers(self, paper_ids):
+        return [self.paper] if self.paper and self.paper.paper_id in paper_ids else []
+
+    async def replace_paper(self, paper, elements, parents, children, embeddings):
+        self.paper = paper
+        self.replace_calls += 1
+
+
+@pytest.mark.asyncio
+async def test_ingestion_is_idempotent_and_revisions_changed_content(tmp_path):
+    path = tmp_path / "paper.txt"
+    path.write_text("first version", encoding="utf-8")
+    corpus = LifecycleCorpus()
+    service = PaperIngestionService(
+        parser=LifecycleParser(),
+        chunker=PaperChunker(),
+        embeddings=FakeEmbeddings(),
+        corpus=corpus,
+    )
+
+    first = await service.ingest(path)
+    unchanged = await service.ingest(path)
+    path.write_text("second version", encoding="utf-8")
+    changed = await service.ingest(path)
+
+    assert corpus.replace_calls == 2
+    assert unchanged.content_hash == first.content_hash
+    assert changed.content_hash != first.content_hash
+    assert changed.revision == 2

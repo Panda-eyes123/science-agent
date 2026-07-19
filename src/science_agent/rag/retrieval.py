@@ -3,9 +3,9 @@
 import asyncio
 from dataclasses import replace
 
-from science_agent.infra.corpus.types import CorpusStore
 from science_agent.infra.embeddings.base import EmbeddingProvider
 from science_agent.infra.rerankers.base import Reranker
+from science_agent.rag.ports import CorpusStore
 from science_agent.rag.routing import route_query
 from science_agent.rag.types import EvidencePack, RetrievalHit
 
