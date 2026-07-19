@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import replace
 
 from science_agent.wiki.ports import WikiEmbedder, WikiRepository, WikiSearchIndex
-from science_agent.wiki.types import WikiEvidence, WikiSearchHit
+from science_agent.wiki.types import WikiEvidence, WikiPage, WikiSearchHit
 
 
 def reciprocal_rank_fusion(
@@ -40,6 +40,7 @@ class WikiRetrievalService:
         recall_limit: int = 20,
         result_limit: int = 6,
         link_limit: int = 8,
+        min_dense_score: float = 0.2,
     ) -> None:
         self.repository = repository
         self.index = index
@@ -47,6 +48,7 @@ class WikiRetrievalService:
         self.recall_limit = recall_limit
         self.result_limit = result_limit
         self.link_limit = link_limit
+        self.min_dense_score = min_dense_score
 
     async def search(
         self,
@@ -82,9 +84,13 @@ class WikiRetrievalService:
             hits=hits,
             pages=pages,
             expanded_page_ids=[page_id for page_id in expanded_ids if page_id in pages],
+            coverage=(
+                bool(bm25_hits)
+                or any(hit.score >= self.min_dense_score for hit in dense_hits)
+            ),
         )
 
-    async def _get_pages(self, page_ids: list[str]) -> dict[str, object]:
+    async def _get_pages(self, page_ids: list[str]) -> dict[str, WikiPage]:
         resolved = await asyncio.gather(
             *(self.repository.get_page(page_id) for page_id in page_ids)
         )

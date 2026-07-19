@@ -12,8 +12,8 @@ applications that integrate persistence or paper RAG infrastructure.
   lifecycle, migrations, schema, event ordering, and failure semantics.
 - [`infrastructure.md`](infrastructure.md): PostgreSQL and Milvus Standalone
   Compose services, operator commands, volumes, and empty-corpus startup.
-- [`wiki.md`](wiki.md): raw-ingest lifecycle, Wiki changesets, Markdown
-  persistence, source citations, and independent index projections.
+- [`wiki.md`](wiki.md): raw-ingest lifecycle, Wiki compilation and drafts,
+  Markdown persistence, query routing, source citations, and maintenance.
 - [`verification.md`](verification.md): completed repository checks, unverified
   external-service checks, and a downstream operator checklist.
 

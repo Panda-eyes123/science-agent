@@ -108,6 +108,7 @@ class WikiEvidence:
     hits: list[WikiSearchHit]
     pages: dict[str, WikiPage]
     expanded_page_ids: list[str] = field(default_factory=list)
+    coverage: bool = False
 
 
 @dataclass(slots=True)

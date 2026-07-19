@@ -29,6 +29,16 @@ class WikiService:
             await self.index.delete_pages(result.deleted_page_ids)
         return result
 
+    async def reindex_all(self) -> int:
+        pages = await self.repository.list_pages()
+        if not pages:
+            return 0
+        vectors = await self.embeddings.embed_documents(
+            [self.index_text(page) for page in pages]
+        )
+        await self.index.replace_pages(pages, vectors)
+        return len(pages)
+
     @staticmethod
     def index_text(page: WikiPage) -> str:
         parts = [page.title, *page.aliases, page.body]

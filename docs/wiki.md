@@ -1,11 +1,15 @@
-# Personal Wiki foundation
+# Personal knowledge layer
 
-The Wiki foundation adds a durable knowledge projection without changing the
-raw paper RAG responsibility.
+The personal knowledge layer adds a durable Wiki projection and a composed
+query workflow without changing the raw paper RAG responsibility.
 
 ```text
 raw paper -> content hash and revision -> replace raw chunks
+          -> WikiSourceSnapshot -> LLMWikiCompiler -> reviewable draft
           -> validated WikiChangeSet -> Markdown pages -> Wiki search index
+
+question -> QueryPolicy -> Wiki BM25/dense/RRF -> one-hop links
+         -> raw RAG verification -> KnowledgeEvidence
 ```
 
 ## Boundaries
@@ -15,8 +19,9 @@ raw paper -> content hash and revision -> replace raw chunks
 - `science_agent.wiki` owns pages, claims, source references, links, revisions,
   validation, and changesets.
 - `science_agent.infra.wiki` owns Markdown and index implementations.
-- Agent and tool routing remain unchanged. A Wiki-guided query service belongs
-  to the next application-layer phase.
+- `science_agent.knowledge` composes raw ingest, Wiki compilation, query routing,
+  and evidence rendering.
+- Agent runtime remains unchanged and receives the workflow through tools.
 
 The raw paper collection and Wiki index are deliberately separate. The paper
 schema contains child and parent chunk fields, while the Wiki schema contains
@@ -54,13 +59,51 @@ Wiki repository writes occur before index projection. If index projection fails,
 the Markdown page remains authoritative and can be indexed again. This avoids a
 distributed transaction between the filesystem and Milvus.
 
+`KnowledgeIngestionService` stores compiler output in `JsonWikiDraftStore` before
+application. Raw ingestion remains successful when compilation fails. A source
+hash change deterministically marks claims backed by older revisions as `stale`
+before compiling the replacement knowledge.
+
+## Query routing
+
+`KnowledgeQueryPolicy` chooses one of three modes:
+
+- `wiki_guided` for overview, relationship, comparison, and synthesis questions;
+- `raw_first` for facts, metrics, sources, dates, tables, and figures;
+- `raw_only` when Wiki coverage is absent, stale, or conflicting.
+
+Wiki content is always labelled as secondary synthesis. Raw parent chunks and
+source elements remain the primary evidence. The combined result reports route
+reasons, stale/conflicting pages, and whether each claim citation was present in
+the raw retrieval window.
+
+## Agent tools
+
+Applications can register three composed tools through
+`register_knowledge_tools`:
+
+- `knowledge_ingest`: ingest raw evidence and create or apply a Wiki draft;
+- `knowledge_search`: retrieve Wiki context and verify it with raw RAG;
+- `wiki_apply_changeset`: apply a reviewed draft by `change_id`.
+
+`knowledge_ingest` accepts `force_recompile=true` when a new compiler version or
+schema should process unchanged source content.
+
+## Maintenance
+
+`WikiMaintenanceService` provides deterministic source-refresh planning and
+lint reports for invalid pages, dead links, duplicate aliases, and orphan pages.
+`WikiService.reindex_all()` rebuilds the current canonical pages after a failed
+or replaced search projection.
+
 ## Offline example
 
 Run the example without API credentials or external infrastructure:
 
 ```powershell
 uv run python examples/wiki_knowledge_layer.py
+uv run python examples/knowledge_workflow.py
 ```
 
-The example creates two cited pages, links the Wiki synthesis page to the raw
-RAG concept page, persists them as Markdown, and queries an in-memory index.
+The first example demonstrates page and link persistence. The second runs the
+complete raw-ingest, Wiki-compile, apply, route, and evidence-verification flow.

@@ -66,7 +66,7 @@ class _PageModel(BaseModel):
         "conflicting",
         "stale",
         "needs_review",
-    ] = "draft"
+    ] = "tentative"
 
 
 class _OperationModel(BaseModel):

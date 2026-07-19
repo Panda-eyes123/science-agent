@@ -81,6 +81,11 @@ class MarkdownWikiRepository:
             operation.target_page_id
             for operation in changeset.operations
             if operation.target_page_id is not None
+        } | {
+            link.target_page_id
+            for operation in changeset.operations
+            if operation.page is not None
+            for link in operation.page.links
         }
         original = {page_id: self._get_page(page_id) for page_id in relevant_ids}
         working = deepcopy(original)
@@ -136,6 +141,8 @@ class MarkdownWikiRepository:
         for page_id in changed_ids:
             page = working[page_id]
             assert page is not None
+            for link in page.links:
+                self._require_page(link.target_page_id, working.get(link.target_page_id))
             original_page = original.get(page_id)
             if original_page is not None:
                 page.revision = original_page.revision + 1
@@ -206,7 +213,9 @@ class MarkdownWikiRepository:
         path = self._audit_path(changeset.change_id)
         if path.exists():
             existing = json.loads(path.read_text(encoding="utf-8"))
-            if existing != asdict(changeset):
+            if self._comparable_changeset(existing) != self._comparable_changeset(
+                asdict(changeset)
+            ):
                 raise WikiConflictError(
                     f"change_id '{changeset.change_id}' was reused with new content"
                 )
@@ -221,7 +230,9 @@ class MarkdownWikiRepository:
         if not path.is_file():
             return False
         existing = json.loads(path.read_text(encoding="utf-8"))
-        if existing != asdict(changeset):
+        if self._comparable_changeset(existing) != self._comparable_changeset(
+            asdict(changeset)
+        ):
             raise WikiConflictError(
                 f"change_id '{changeset.change_id}' was reused with new content"
             )
@@ -230,6 +241,12 @@ class MarkdownWikiRepository:
     def _audit_path(self, change_id: str) -> Path:
         audit_id = sha256(change_id.encode("utf-8")).hexdigest()[:20]
         return self.changes_dir / f"{audit_id}.json"
+
+    @staticmethod
+    def _comparable_changeset(payload: dict[str, Any]) -> dict[str, Any]:
+        comparable = dict(payload)
+        comparable.pop("created_at", None)
+        return comparable
 
     @staticmethod
     def _serialize(page: WikiPage) -> str:

@@ -4,6 +4,29 @@ This document separates repository-level checks completed on 2026-07-18 from
 checks that require external infrastructure and were intentionally left to
 downstream operators.
 
+## Personal knowledge checks (2026-07-19)
+
+The focused offline verification for the Raw RAG lifecycle and personal
+knowledge layer completed with these results:
+
+| Check | Result |
+|---|---|
+| Complete unit test suite | `43 passed` |
+| Ruff static analysis | Passed |
+| Wiki foundation example | Passed |
+| End-to-end knowledge workflow example | Passed |
+| `git diff --check` | Passed |
+
+The knowledge-focused tests cover content-hash idempotency, revisions, Wiki
+changeset validation, draft application, stale-source propagation, Wiki/raw
+routing, citation verification, LLM JSON parsing, linting, and tool registration.
+The complete suite also covers Agent, Store, provider, tool, and multimodal RAG
+behavior.
+
+Live Milvus verification remains part of the external-infrastructure boundary.
+In particular, operators should validate paper replacement filters and the
+separate `wiki_pages` collection against their deployed Milvus version.
+
 ## Completed checks
 
 The latest verification performed for the Store and Milvus interface change

@@ -31,6 +31,10 @@ The SDK can already:
 - Enforce local sandbox path boundaries for file tools.
 - Request manual tool approval through `control.permission_required`.
 - Call an OpenAI-compatible `/chat/completions` endpoint with categorized provider errors and retry handling.
+- Maintain a Markdown Wiki projection with cited claims, drafts, revisions,
+  stale-source detection, BM25/dense indexing, and linting.
+- Route personal knowledge queries through Wiki synthesis and raw RAG evidence
+  without coupling the Agent runtime to either storage implementation.
 
 ## Requirements
 
@@ -132,14 +136,16 @@ common Jina/Cohere-style response shape with `index` and `relevance_score`.
 evidence pack. Embeddings, reranking, and VLM inference use API adapters; no
 model weights are loaded into the agent process.
 
-## Personal Wiki Foundation (Phases 0-1)
+## Personal Knowledge Layer (Phases 0-3)
 
 The optional Wiki layer is a durable projection over raw paper evidence. It does
 not replace `RetrievalService` and does not share the paper chunk schema.
 
 ```text
-Raw RAG evidence -> validated WikiChangeSet -> Markdown Wiki
-                                          -> independent Wiki index
+Raw ingest -> WikiSourceSnapshot -> reviewable WikiChangeSet -> Markdown Wiki
+                                                        -> independent index
+
+Question -> Wiki BM25/dense/RRF -> linked pages -> raw RAG verification
 ```
 
 - `WikiPage`, `WikiClaim`, `SourceRef`, and `WikiLink` preserve stable knowledge
@@ -150,11 +156,18 @@ Raw RAG evidence -> validated WikiChangeSet -> Markdown Wiki
   `paper_chunks`; `InMemoryWikiIndex` supports offline examples and tests.
 - Uncited claims, unsafe page ids, duplicate links, and stale update revisions
   are rejected before page writes.
+- `KnowledgeIngestionService` preserves Raw RAG success when model compilation
+  fails, stores reviewable drafts, and marks claims from older source hashes stale.
+- `KnowledgeQueryService` routes queries as `wiki_guided`, `raw_first`, or
+  `raw_only`, then returns separated Wiki synthesis and raw evidence.
+- `register_knowledge_tools` exposes `knowledge_ingest`, `knowledge_search`, and
+  `wiki_apply_changeset` without modifying the Agent runtime.
 
 Run the offline example:
 
 ```powershell
 uv run python examples/wiki_knowledge_layer.py
+uv run python examples/knowledge_workflow.py
 ```
 
 See the [Wiki foundation guide](docs/wiki.md) for storage and failure semantics.
@@ -334,9 +347,9 @@ single-process development.
 See the [storage guide](docs/storage.md) for connection lifecycle, schema,
 transaction behavior, event ordering, and failure semantics.
 
-## Tool, Persistence, And Wiki Examples
+## Tool, Persistence, And Knowledge Examples
 
-The repository includes four practical local demos:
+The repository includes five practical local demos:
 
 - `examples/tool_usage.py`: simulates a model requesting `todo_write`, then persists the agent state in `.demo_store`.
 - `examples/persistence_resume.py`: creates an agent with a fixed `agent_id`, writes state through `JSONStore`, then restores a second agent instance from the same store.
@@ -344,6 +357,8 @@ The repository includes four practical local demos:
   `PostgresStore` and its automatic migrations.
 - `examples/wiki_knowledge_layer.py`: applies cited Wiki changes, writes
   Markdown pages, links concepts, and searches an offline index.
+- `examples/knowledge_workflow.py`: runs raw ingestion, Wiki compilation,
+  application, routed retrieval, and raw citation verification end to end.
 
 These examples use mock providers or in-memory adapters so they remain stable
 for tests and offline development.
@@ -450,6 +465,10 @@ The `science_agent.wiki` namespace additionally exports the Wiki page, claim,
 link, source-reference, changeset, validation, and service contracts. Concrete
 Markdown and index adapters live under `science_agent.infra.wiki`.
 
+The `science_agent.knowledge` namespace exports the composed ingestion, routing,
+query, and rendering services. `register_knowledge_tools` is exported from
+`science_agent.tools`.
+
 ## Capability Boundaries
 
 This alpha is useful for local development, SDK contract exploration, and small
@@ -487,6 +506,7 @@ src/science_agent/
   agent_runtime/     Tool execution, permissions, approval coordination
   rag/               Raw paper ingestion, retrieval, provenance, multimodal flow
   wiki/              Durable pages, claims, links, changesets, validation
+  knowledge/         Raw/Wiki ingestion and query orchestration
   infra/             Providers, stores, sandbox implementations
   tools/             Tool primitives, registry, built-in tools
   utils/             Small utility helpers
