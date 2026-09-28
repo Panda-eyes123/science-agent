@@ -134,6 +134,32 @@ SDK 仍可使用 `await agent.send(text)`；需要流式事件时使用
 
 ## Paper RAG (Stages 1-3)
 
+## Wiki 知识编译层
+
+Wiki 采用审阅优先的编译流程。LLM 只根据 Raw RAG `RawSourceSnapshot` 和现有
+Wiki Markdown 页面生成 `WikiChangeset`，不能直接改写页面，也不能用生成文本替代
+原始证据。Changeset 必须通过引用白名单、Markdown 结构校验和页面版本校验，审批后
+才会写回 Markdown。
+
+```text
+RawSourceSnapshot + WikiPage
+        -> LLM compiler
+        -> WikiChangeset (pending)
+        -> citation whitelist + structure validation + expected version
+        -> MarkdownWikiStore (authoritative Markdown)
+        -> rebuildable Wiki index (Milvus adapter)
+```
+
+- `src/science_agent/wiki/types.py` 定义 SourceSnapshot、WikiPage、Changeset、查询结果和 Claim 验证记录。
+- `src/science_agent/wiki/changesets.py` 负责引用白名单、结构校验、乐观版本控制和 stale 标记。
+- `src/science_agent/infra/wiki/markdown_store.py` 将正文与页面元数据保存在同一个 Markdown 文件中；索引删除后可从这些文件重建。
+- `src/science_agent/wiki/indexing.py` 定义从 Markdown 重建派生索引的流程。
+- `src/science_agent/wiki/query.py` 提供 `wiki_guided`、`raw_first`、`raw_only` 三种查询编排，并保留 Raw EvidencePack 供 Claim 验证。
+
+源论文产生新快照时，关联页面只标记为 `stale`，不会自动改正文。查询时只有新鲜 Wiki 页面进入概念关联上下文，Raw RAG 仍作为最终 Claim 引用验证来源。
+
+当前这些是独立领域和存储接口，尚未接入 Web 工作台的页面路由；接入时应在 Web 装配层注入 Markdown store、LLM compiler、Raw RAG searcher 和 Wiki index adapter。
+
 The SDK now includes an optional, tool-layer scientific-paper RAG pipeline. The
 agent runtime remains independent; applications explicitly create the parser,
 embedding model, Milvus corpus, ingestion service, and retrieval service, then

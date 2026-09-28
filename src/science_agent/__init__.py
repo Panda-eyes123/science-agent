@@ -10,6 +10,7 @@ from .infra.store.json_store import JSONStore
 from .tools.base import Tool, ToolExecutionContext
 from .tools.registry import ToolRegistry
 from .types import ModelResponse, ModelStreamEnd, ModelTextDelta, ToolCallRequest
+from .wiki import WikiChangesetService, WikiQueryService
 
 __all__ = [
     "Agent",
@@ -32,4 +33,6 @@ __all__ = [
     "ToolCallRequest",
     "ToolExecutionContext",
     "ToolRegistry",
+    "WikiChangesetService",
+    "WikiQueryService",
 ]
