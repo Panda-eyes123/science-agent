@@ -11,8 +11,6 @@ import asyncio
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 from science_agent import (
     Agent,
     AgentConfig,
@@ -25,6 +23,7 @@ from science_agent.tools.builtin import register_builtin_tools
 
 
 async def main() -> None:
+    load_dotenv()
     templates = AgentTemplateRegistry()
     templates.register(
         AgentTemplateDefinition(

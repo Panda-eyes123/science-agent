@@ -40,6 +40,98 @@ To use the scientific-paper RAG stack, install the optional dependencies:
 uv sync --extra rag --extra dev
 ```
 
+本地生成文件统一放在 `.local/` 中，该目录不提交到 Git：
+
+```text
+.local/
+  cache/       pytest、Ruff、uv 缓存
+  tmp/pytest/  pytest 临时文件
+  logs/        本地后台服务日志
+  data/        SDK 存储及 Web 会话数据、会话文件
+  workspaces/  SDK 默认文件工作空间
+  examples/    示例程序的持久化数据
+  tools/       本机附带的 Python、uv 工具（如有）
+```
+
+根目录保留 `.venv/`，供 uv 自动发现虚拟环境；`.git/`、`.gitignore`、
+`.python-version` 和 `.env.example` 也保持标准位置。后续运行测试和检查不会
+再在根目录生成独立的 pytest、Ruff 或 uv 缓存目录。
+本机附带的 uv 可通过 `.local/tools/bin/uv.exe` 调用。
+
+旧工作区升级时，先停止后端，将 `.science_agent/` 移到 `.local/data/`，
+将 `.science_agent_workspace/` 移到 `.local/workspaces/`，再启动服务。
+若目标目录已经有数据，应先核对内容，避免直接合并覆盖。
+`SCIENCE_AGENT_DATA_DIR` 的显式配置仍然优先。
+
+## 本地研究工作台
+
+工作台支持会话历史、真实模型流式回答、工具执行进度、人工审批和停止运行。
+当前版本为本地单用户应用；论文 RAG 继续作为 SDK 能力提供，尚未接入网页。
+
+准备 Python 3.13+、uv 和 Node.js 22.12+，在项目根目录执行：
+
+```powershell
+uv sync --extra web --extra dev
+Copy-Item .env.example .env
+```
+
+编辑 `.env`，填写 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`。
+服务端使用 OpenAI-compatible Chat Completions 流式接口；密钥不会发送到浏览器。
+缺少密钥时页面会提示配置，不会回退为模拟回答。
+
+终端一，启动后端：
+
+```powershell
+uv run uvicorn science_agent_web.app:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+终端二，启动前端：
+
+```powershell
+cd web
+npm ci
+npm run dev
+```
+
+打开 <http://127.0.0.1:5173>。Vite 将 `/api` 转发到本机 8000 端口。
+前后端均只监听本机；不要使用多进程或 `--workers` 启动后端。
+
+一次完整操作：新建会话，要求助手使用 `fs_write` 把实验模板保存到
+`notes/experiment.md`，查看参数后允许写入，等待回答，再刷新页面检查历史。
+写文件及 Todo 更新需要确认，读工具自动执行。拒绝会结束本次运行。
+
+数据默认保存在 `.local/data/store`，文件位于
+`.local/data/workspaces/<thread_id>`，可用 `SCIENCE_AGENT_DATA_DIR` 更改数据根目录。
+运行由后端持有，网页断开不会停止任务；刷新后可续传事件、继续审批。
+停止不会回滚已完成的文件写入。后端重启将未完成运行标记为“已中断”，不会自动重放工具。
+
+### 模块与契约
+
+- `web/`：React + TypeScript + Vite + CSS Modules，按会话、对话与运行详情组织。
+- `src/science_agent_web/`：路由/DTO、运行服务、SDK 事件适配。单向依赖 SDK。
+- `src/science_agent/`：模型循环、工具、权限、事件和存储；不依赖 Web 框架。
+
+HTTP 文档在 <http://127.0.0.1:8000/docs>。Pydantic 定义是公开类型的唯一来源；
+运行详情中的事件和 SSE 使用同一模型。更改契约后，在后端运行时执行：
+
+```powershell
+cd web
+npm run types
+npm run lint
+npm run build
+```
+
+生成的 `schema.d.ts` 随代码提交，不手工修改。前端新增组件按 ESLint/Prettier 规范维护，
+`npm run format` 可统一格式。Python 检查继续使用 `uv run pytest` 与 `uv run ruff check .`。
+新增回归覆盖流式工具参数、多轮消息配对、审批、取消、事件续传和重启后的中断状态。
+这些使用隔离的测试 Provider；真实模型验收仍需要有效的服务端配置。
+
+SDK 仍可使用 `await agent.send(text)`；需要流式事件时使用
+`await agent.send(text, stream=True)`，并订阅原有 progress/control/monitor 通道。
+流式 Provider 实现独立的 `StreamingModelProvider` 协议，输出 `ModelTextDelta` 和
+`ModelStreamEnd`；不支持流式的 Provider 会明确报错。消息和事件新增字段均有默认值，
+现有 JSON 历史可继续读取。
+
 ## Paper RAG (Stages 1-3)
 
 The SDK now includes an optional, tool-layer scientific-paper RAG pipeline. The
@@ -233,7 +325,7 @@ asyncio.run(main())
 
 The repository includes two practical local demos:
 
-- `examples/tool_usage.py`: simulates a model requesting `todo_write`, then persists the agent state in `.demo_store`.
+- `examples/tool_usage.py`: simulates a model requesting `todo_write`, then persists the agent state in `.local/examples/demo_store`.
 - `examples/persistence_resume.py`: creates an agent with a fixed `agent_id`, writes state through `JSONStore`, then restores a second agent instance from the same store.
 
 These examples use mock providers so they are stable in tests and offline development.
@@ -352,7 +444,6 @@ Currently supported:
 
 Not yet supported:
 
-- Streaming token-by-token provider output.
 - SQLite/PostgreSQL stores.
 - Distributed locks or multi-worker coordination.
 - MCP tools.
@@ -383,6 +474,5 @@ Near-term work:
 - Add an approval-control example under `examples/`.
 - Add provider usage/token parsing.
 - Add request logging hooks for provider calls.
-- Add streaming support for OpenAI-compatible responses.
 - Add CI for tests and linting.
 - Decide whether Python `3.13+` remains required or whether to support `3.11+`.

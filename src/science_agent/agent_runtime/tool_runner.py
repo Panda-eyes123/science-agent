@@ -1,6 +1,7 @@
 """Sequential tool execution for the phase-one runtime."""
 
 from collections.abc import Awaitable, Callable
+from uuid import uuid4
 
 from science_agent.agent_runtime.permission_manager import PermissionManager
 from science_agent.core.permission_modes import ApprovalDecision
@@ -23,7 +24,7 @@ class ToolRunner:
         approval_handler: ApprovalHandler | None = None,
     ) -> ToolCallRecord:
         record = ToolCallRecord(
-            call_id=call.call_id or f"call_{utc_now_iso()}",
+            call_id=call.call_id or f"call_{uuid4().hex}",
             name=call.name,
             arguments=call.arguments,
             state="PENDING",

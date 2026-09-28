@@ -19,7 +19,7 @@ class StaticProvider:
 
 
 async def main() -> None:
-    store = JSONStore(".resume_store")
+    store = JSONStore(".local/examples/resume_store")
     templates = AgentTemplateRegistry()
     templates.register(
         AgentTemplateDefinition(

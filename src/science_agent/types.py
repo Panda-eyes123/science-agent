@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,6 +31,9 @@ class Message:
     content: str
     name: str | None = None
     tool_call_id: str | None = None
+    id: str = field(default_factory=lambda: uuid4().hex)
+    tool_calls: list["ToolCallRequest"] = field(default_factory=list)
+    run_id: str | None = None
 
 
 class ToolCallRequest(BaseModel):
@@ -50,6 +54,7 @@ class ToolCallRecord:
     error: str | None = None
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
+    run_id: str | None = None
 
 
 class ModelResponse(BaseModel):
@@ -58,6 +63,19 @@ class ModelResponse(BaseModel):
     text: str = ""
     tool_calls: list[ToolCallRequest] = Field(default_factory=list)
     raw: dict[str, Any] | None = None
+
+
+class ModelTextDelta(BaseModel):
+    type: Literal["text_delta"] = "text_delta"
+    text: str
+
+
+class ModelStreamEnd(BaseModel):
+    type: Literal["end"] = "end"
+    response: ModelResponse
+
+
+ModelStreamEvent = ModelTextDelta | ModelStreamEnd
 
 
 @dataclass(slots=True)
@@ -75,3 +93,4 @@ class AgentEventEnvelope:
     timestamp: float
     channel: AgentChannel
     event: dict[str, Any]
+    run_id: str | None = None

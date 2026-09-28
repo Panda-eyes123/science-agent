@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +21,14 @@ from science_agent.errors import (
     ProviderServerError,
     ProviderTimeoutError,
 )
-from science_agent.types import Message, ModelResponse, ToolCallRequest
+from science_agent.types import (
+    Message,
+    ModelResponse,
+    ModelStreamEnd,
+    ModelStreamEvent,
+    ModelTextDelta,
+    ToolCallRequest,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,8 +48,10 @@ class OpenAIProvider:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.model = model or DEFAULT_MODEL
-        self.base_url = (base_url or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
+        self.model = model or os.getenv("OPENAI_MODEL") or DEFAULT_MODEL
+        self.base_url = (
+            base_url or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+        ).rstrip("/")
         self.timeout = timeout
         self.retry = retry or RetryConfig()
         self.transport = transport
@@ -53,9 +63,31 @@ class OpenAIProvider:
         tools: list[dict] | None = None,
         system_prompt: str | None = None,
     ) -> ModelResponse:
+        response = await self._post_with_retry(
+            self._headers(), self._payload(messages, tools, system_prompt)
+        )
+        try:
+            raw = response.json()
+            return _parse_message(raw["choices"][0]["message"], raw=raw)
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise ProviderResponseError(
+                "OpenAI response had an unexpected shape."
+            ) from exc
+
+    def _headers(self) -> dict[str, str]:
         if not self.api_key:
             raise ProviderError("OPENAI_API_KEY is not set.")
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
+    def _payload(
+        self,
+        messages: list[Message],
+        tools: list[dict] | None,
+        system_prompt: str | None,
+    ) -> dict[str, Any]:
         payload_messages: list[dict[str, Any]] = []
         if system_prompt:
             payload_messages.append({"role": "system", "content": system_prompt})
@@ -65,6 +97,18 @@ class OpenAIProvider:
                 entry["tool_call_id"] = message.tool_call_id
             if message.name:
                 entry["name"] = message.name
+            if message.tool_calls:
+                entry["tool_calls"] = [
+                    {
+                        "id": call.call_id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                        },
+                    }
+                    for call in message.tool_calls
+                ]
             payload_messages.append(entry)
 
         payload: dict[str, Any] = {"model": self.model, "messages": payload_messages}
@@ -72,40 +116,105 @@ class OpenAIProvider:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        return payload
 
-        response = await self._post_with_retry(headers, payload)
-
-        try:
-            raw = response.json()
-            choice = raw["choices"][0]["message"]
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            raise ProviderResponseError("OpenAI response had an unexpected shape.") from exc
-        text = choice.get("content") or ""
-        tool_calls: list[ToolCallRequest] = []
-        for tool_call in choice.get("tool_calls", []) or []:
-            raw_args = tool_call.get("function", {}).get("arguments", "{}")
+    async def stream(
+        self,
+        messages: list[Message],
+        *,
+        tools: list[dict] | None = None,
+        system_prompt: str | None = None,
+    ) -> AsyncIterator[ModelStreamEvent]:
+        payload = self._payload(messages, tools, system_prompt)
+        payload["stream"] = True
+        headers = self._headers()
+        consumed = False
+        attempts = max(1, self.retry.max_attempts)
+        for attempt in range(attempts):
             try:
-                arguments = (
-                    json.loads(raw_args)
-                    if isinstance(raw_args, str)
-                    else (raw_args or {})
-                )
-            except json.JSONDecodeError as exc:
-                raise ProviderResponseError(
-                    f"OpenAI returned invalid tool arguments for {tool_call.get('id')}."
-                ) from exc
-            tool_calls.append(
-                ToolCallRequest(
-                    name=tool_call["function"]["name"],
-                    arguments=arguments,
-                    call_id=tool_call.get("id"),
-                )
-            )
-        return ModelResponse(text=text, tool_calls=tool_calls, raw=raw)
+                async with httpx.AsyncClient(
+                    timeout=self.timeout, transport=self.transport
+                ) as client:
+                    async with client.stream(
+                        "POST",
+                        f"{self.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    ) as response:
+                        if response.status_code >= 400:
+                            await response.aread()
+                            raise _classify_openai_response(response)
+                        text: list[str] = []
+                        calls: dict[int, dict[str, Any]] = {}
+                        finished = False
+                        async for line in response.aiter_lines():
+                            if not line.startswith("data:"):
+                                continue
+                            data = line[5:].strip()
+                            if data == "[DONE]":
+                                finished = True
+                                break
+                            consumed = True
+                            try:
+                                chunk = json.loads(data)
+                                if "error" in chunk:
+                                    raise ProviderResponseError(str(chunk["error"]))
+                                choices = chunk.get("choices") or []
+                                if not choices:
+                                    continue
+                                choice = choices[0]
+                                if choice.get("finish_reason") in {
+                                    "length",
+                                    "content_filter",
+                                }:
+                                    raise ProviderResponseError(
+                                        f"Model stopped: {choice['finish_reason']}"
+                                    )
+                                delta = choice.get("delta") or {}
+                                if delta.get("content"):
+                                    text.append(delta["content"])
+                                    yield ModelTextDelta(text=delta["content"])
+                                # 按 index 分别拼接工具参数；完整收到后才能解析并执行。
+                                for part in delta.get("tool_calls") or []:
+                                    call = calls.setdefault(
+                                        part["index"],
+                                        {
+                                            "id": "",
+                                            "function": {"name": "", "arguments": ""},
+                                        },
+                                    )
+                                    if part.get("id"):
+                                        call["id"] += part["id"]
+                                    function = part.get("function") or {}
+                                    for key in ("name", "arguments"):
+                                        call["function"][key] += function.get(key) or ""
+                            except (KeyError, TypeError, ValueError) as exc:
+                                raise ProviderResponseError(
+                                    "Invalid streaming response."
+                                ) from exc
+                        if not finished:
+                            raise ProviderResponseError(
+                                "Model stream ended before [DONE]."
+                            )
+                        yield ModelStreamEnd(
+                            response=_parse_message(
+                                {
+                                    "content": "".join(text),
+                                    "tool_calls": [calls[key] for key in sorted(calls)],
+                                }
+                            )
+                        )
+                        return
+            except httpx.TimeoutException:
+                error = ProviderTimeoutError("OpenAI request timed out.")
+            except httpx.RequestError as exc:
+                error = ProviderNetworkError(f"OpenAI network request failed: {exc}")
+            except ProviderError as exc:
+                error = exc
+            # 消费流后不重试，避免重复文本或工具副作用。
+            if consumed or not error.retryable or attempt == attempts - 1:
+                raise error
+            await asyncio.sleep(_retry_delay(error, attempt, self.retry))
 
     async def _post_with_retry(
         self, headers: dict[str, str], payload: dict[str, Any]
@@ -140,6 +249,26 @@ class OpenAIProvider:
             await asyncio.sleep(_retry_delay(last_error, attempt, self.retry))
 
         raise last_error or ProviderError("OpenAI request failed.")
+
+
+def _parse_message(choice: dict, raw: dict | None = None) -> ModelResponse:
+    try:
+        calls = []
+        for call in choice.get("tool_calls") or []:
+            function = call["function"]
+            args = function.get("arguments") or "{}"
+            calls.append(
+                ToolCallRequest(
+                    name=function["name"],
+                    arguments=json.loads(args) if isinstance(args, str) else args,
+                    call_id=call.get("id") or None,
+                )
+            )
+        return ModelResponse(
+            text=choice.get("content") or "", tool_calls=calls, raw=raw
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ProviderResponseError("Invalid model message or tool arguments.") from exc
 
 
 def _classify_openai_response(response: httpx.Response) -> ProviderError:

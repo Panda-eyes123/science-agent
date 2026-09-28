@@ -3,32 +3,13 @@
 from .core.agent import Agent, AgentConfig
 from .core.template import AgentTemplateDefinition, AgentTemplateRegistry
 from .core.todo import TodoItem, TodoService
-from .infra.providers.base import ModelProvider
+from .infra.providers.base import ModelProvider, StreamingModelProvider
+from .infra.providers.openai import OpenAIProvider, RetryConfig
 from .infra.sandbox import LocalSandbox, SandboxResult
 from .infra.store.json_store import JSONStore
 from .tools.base import Tool, ToolExecutionContext
 from .tools.registry import ToolRegistry
-from .types import ModelResponse, ToolCallRequest
-
-_openai_provider_import_error: ModuleNotFoundError | None = None
-
-try:
-    from .infra.providers.openai import OpenAIProvider, RetryConfig
-except ModuleNotFoundError as exc:  # pragma: no cover
-    _openai_provider_import_error = exc
-
-    class OpenAIProvider:  # type: ignore[no-redef]
-        def __init__(self, *args, **kwargs) -> None:
-            raise ModuleNotFoundError(
-                "OpenAIProvider requires the optional dependency 'httpx'. Install project dependencies first."
-            ) from _openai_provider_import_error
-
-    class RetryConfig:  # type: ignore[no-redef]
-        def __init__(self, *args, **kwargs) -> None:
-            raise ModuleNotFoundError(
-                "RetryConfig requires the optional dependency 'httpx'. Install project dependencies first."
-            ) from _openai_provider_import_error
-
+from .types import ModelResponse, ModelStreamEnd, ModelTextDelta, ToolCallRequest
 
 __all__ = [
     "Agent",
@@ -38,6 +19,9 @@ __all__ = [
     "JSONStore",
     "LocalSandbox",
     "ModelProvider",
+    "StreamingModelProvider",
+    "ModelStreamEnd",
+    "ModelTextDelta",
     "ModelResponse",
     "OpenAIProvider",
     "RetryConfig",

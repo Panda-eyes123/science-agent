@@ -54,7 +54,7 @@ async def main() -> None:
             template_id="science-assistant",
             model=TodoDemoProvider(),
             tool_registry=registry,
-            store=JSONStore(".demo_store"),
+            store=JSONStore(".local/examples/demo_store"),
         ),
         templates,
     )
