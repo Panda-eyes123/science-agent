@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import threading
 from dataclasses import asdict
 from typing import Any
@@ -10,20 +11,19 @@ from science_agent.rag.types import ChildChunk, ParentChunk, PaperDocument, Retr
 
 
 class MilvusCorpusStore:
-    """Persist paper provenance and child vectors in local or remote Milvus.
+    """Persist paper provenance and child vectors in the Milvus service.
 
-    The vector collection needs Milvus 2.5+ native BM25 functions. A local URI such
-    as ``./data/science_rag.db`` starts Milvus Lite when pymilvus supports it.
+    The vector collection needs Milvus 2.5+ native BM25 functions.
     """
 
     def __init__(
         self,
         *,
-        uri: str = "./data/science_rag.db",
+        uri: str | None = None,
         collection_name: str = "paper_chunks",
         embedding_dim: int,
     ) -> None:
-        self.uri = uri
+        self.uri = uri or os.getenv("MILVUS_URI", "http://milvus:19530")
         self.collection_name = collection_name
         self.records_collection = f"{collection_name}_records"
         self.embedding_dim = embedding_dim

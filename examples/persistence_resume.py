@@ -1,6 +1,9 @@
 """Example showing JSON persistence between agent instances."""
 
 import asyncio
+from pathlib import Path
+
+from science_agent.config import DEFAULT_DATA_DIR
 
 from science_agent import (
     Agent,
@@ -19,7 +22,7 @@ class StaticProvider:
 
 
 async def main() -> None:
-    store = JSONStore(".local/examples/resume_store")
+    store = JSONStore(Path(DEFAULT_DATA_DIR) / "examples" / "resume_store")
     templates = AgentTemplateRegistry()
     templates.register(
         AgentTemplateDefinition(

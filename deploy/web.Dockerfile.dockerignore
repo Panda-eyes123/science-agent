@@ -1,0 +1,13 @@
+**
+!web/
+!web/**
+!deploy/
+!deploy/node/
+!deploy/node/**
+!deploy/nginx.conf
+!deploy/toolbox.sh
+web/node_modules/
+web/dist/
+web/.local/
+web/.vite/
+web/*.tsbuildinfo

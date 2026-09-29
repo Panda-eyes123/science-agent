@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, Header, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -25,7 +24,6 @@ from .service import RunService, ServiceError
 
 
 def create_app(service: RunService | None = None) -> FastAPI:
-    load_dotenv()
     runtime = service or RunService(
         Path(os.getenv("SCIENCE_AGENT_DATA_DIR", DEFAULT_DATA_DIR))
     )
@@ -33,11 +31,19 @@ def create_app(service: RunService | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await runtime.startup()
-        yield
-        await runtime.shutdown()
+        try:
+            yield
+        finally:
+            await runtime.shutdown()
 
     app = FastAPI(title="Science Agent Local API", version="0.1.0", lifespan=lifespan)
     app.state.runtime = runtime
+
+    @app.get("/healthz", include_in_schema=False)
+    async def health():
+        # ASGI only serves requests after runtime.startup() has completed.
+        # This is process health, not a paid model call or a RAG readiness probe.
+        return {"status": "ok"}
 
     @app.exception_handler(ServiceError)
     async def service_error(request: Request, exc: ServiceError):

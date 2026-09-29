@@ -1,15 +1,13 @@
 """Example using OpenAIProvider with real API calls.
 
-Requires a .env file at the project root with at minimum:
+Requires an environment variable (injected by Compose from deploy/.env):
     OPENAI_API_KEY=your-api-key-here
 
-Optional overrides (see .env.example):
+Optional overrides (see deploy/.env.example):
     OPENAI_BASE_URL, OPENAI_MODEL
 """
 
 import asyncio
-
-from dotenv import load_dotenv
 
 from science_agent import (
     Agent,
@@ -23,7 +21,6 @@ from science_agent.tools.builtin import register_builtin_tools
 
 
 async def main() -> None:
-    load_dotenv()
     templates = AgentTemplateRegistry()
     templates.register(
         AgentTemplateDefinition(

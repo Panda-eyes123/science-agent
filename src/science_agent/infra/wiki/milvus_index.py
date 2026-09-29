@@ -5,6 +5,7 @@ source of truth and can rebuild this collection after data loss or schema change
 """
 
 import asyncio
+import os
 from dataclasses import asdict
 from typing import Any
 
@@ -17,12 +18,12 @@ class MilvusWikiIndex:
         self,
         *,
         embeddings: EmbeddingProvider,
-        uri: str = "./data/science_rag.db",
+        uri: str | None = None,
         collection_name: str = "wiki_pages",
         embedding_dim: int,
     ) -> None:
         self.embeddings = embeddings
-        self.uri = uri
+        self.uri = uri or os.getenv("MILVUS_URI", "http://milvus:19530")
         self.collection_name = collection_name
         self.embedding_dim = embedding_dim
         self._client: Any | None = None

@@ -4,6 +4,8 @@ import asyncio
 from hashlib import sha1
 from pathlib import Path
 
+from science_agent.config import DEFAULT_DATA_DIR
+
 from science_agent.infra.visual_assets.region_renderer import PDFRegionRenderer
 from science_agent.rag.multimodal.types import VisualAsset
 from science_agent.rag.types import PaperDocument, SourceElement
@@ -13,8 +15,8 @@ class PDFVisualAssetResolver:
     def __init__(
         self,
         *,
-        artifact_root: str | Path = "./data/paper_artifacts",
-        crop_root: str | Path = "./data/paper_crops",
+        artifact_root: str | Path = f"{DEFAULT_DATA_DIR}/papers/artifacts",
+        crop_root: str | Path = f"{DEFAULT_DATA_DIR}/papers/crops",
         renderer: PDFRegionRenderer | None = None,
     ) -> None:
         self.artifact_root = Path(artifact_root)

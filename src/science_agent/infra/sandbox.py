@@ -2,7 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from science_agent.config import DEFAULT_WORK_DIR
 from science_agent.errors import SandboxError
@@ -24,7 +24,12 @@ class LocalSandbox:
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
     def _resolve_path(self, relative_path: str) -> Path:
-        candidate = (self.work_dir / relative_path).resolve()
+        # Tool paths use the same rules on Windows and in Linux containers.
+        # Reject drive/UNC paths and recognize either directory separator.
+        if self.enforce_boundary and PureWindowsPath(relative_path).drive:
+            raise SandboxError(f"Path escapes sandbox boundary: {relative_path}")
+        normalized = relative_path.replace("\\", "/") if self.enforce_boundary else relative_path
+        candidate = (self.work_dir / normalized).resolve()
         if (
             self.enforce_boundary
             and self.work_dir not in candidate.parents

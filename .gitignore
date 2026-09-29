@@ -24,3 +24,6 @@ web/node_modules/
 web/dist/
 .local-tools/
 web/*.tsbuildinfo
+web/.vite/
+deploy/.env
+deploy/backups/

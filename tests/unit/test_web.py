@@ -52,6 +52,7 @@ async def test_http_approval_replay_and_history(tmp_path, decision):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app), base_url="http://test"
         ) as client:
+            assert (await client.get("/healthz")).json() == {"status": "ok"}
             thread = (await client.post("/api/v1/threads")).json()["id"]
             path = f"/api/v1/threads/{thread}"
             response = await client.post(f"{path}/runs", json={"text": "保存记录"})

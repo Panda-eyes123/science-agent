@@ -180,8 +180,10 @@ async def test_sandbox_file_tools_enforce_boundaries(tmp_path):
     result = await read_tool.run({"path": "notes/result.txt"}, context)
 
     assert result == {"path": "notes/result.txt", "content": "ok"}
-    with pytest.raises(Exception, match="escapes sandbox"):
-        await read_tool.run({"path": "..\\outside.txt"}, context)
+    assert sandbox.read_text(r"notes\result.txt") == "ok"
+    for path in ("../outside.txt", r"..\outside.txt", r"nested\..\..\outside.txt", r"C:\outside.txt"):
+        with pytest.raises(Exception, match="escapes sandbox"):
+            await read_tool.run({"path": path}, context)
 
 
 @pytest.mark.asyncio

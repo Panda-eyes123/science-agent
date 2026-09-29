@@ -1,6 +1,9 @@
 """Example showing a model response that triggers a built-in tool."""
 
 import asyncio
+from pathlib import Path
+
+from science_agent.config import DEFAULT_DATA_DIR
 
 from science_agent import (
     Agent,
@@ -54,7 +57,7 @@ async def main() -> None:
             template_id="science-assistant",
             model=TodoDemoProvider(),
             tool_registry=registry,
-            store=JSONStore(".local/examples/demo_store"),
+            store=JSONStore(Path(DEFAULT_DATA_DIR) / "examples" / "demo_store"),
         ),
         templates,
     )

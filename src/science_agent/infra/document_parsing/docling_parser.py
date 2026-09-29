@@ -5,6 +5,8 @@ from pathlib import Path
 import re
 from typing import Any, Iterable
 
+from science_agent.config import DEFAULT_DATA_DIR
+
 from science_agent.rag.routing import classify_section
 from science_agent.rag.types import ElementType, PaperDocument, SectionKind, SourceElement
 
@@ -34,7 +36,7 @@ class DoclingPDFParser:
         self,
         *,
         page_resolver: PyMuPDFPageResolver | None = None,
-        artifact_dir: str | Path = "./data/paper_artifacts",
+        artifact_dir: str | Path = f"{DEFAULT_DATA_DIR}/papers/artifacts",
     ) -> None:
         self.page_resolver = page_resolver or PyMuPDFPageResolver()
         self.artifact_dir = Path(artifact_dir)

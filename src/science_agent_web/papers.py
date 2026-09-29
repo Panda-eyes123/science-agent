@@ -44,7 +44,7 @@ class PaperService:
     def from_config(cls, data_dir: Path, store: JSONStore) -> "PaperService":
         embeddings = OpenAIEmbeddingProvider()
         corpus = MilvusCorpusStore(
-            uri=os.getenv("MILVUS_URI", "http://127.0.0.1:19530"),
+            uri=os.getenv("MILVUS_URI", "http://milvus:19530"),
             collection_name=os.getenv("MILVUS_COLLECTION", "science_web_papers"),
             embedding_dim=int(os.getenv("EMBEDDING_DIM", "1536")),
         )

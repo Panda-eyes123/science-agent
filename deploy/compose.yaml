@@ -1,0 +1,181 @@
+name: science-agent
+
+x-api-environment: &api-environment
+  SCIENCE_AGENT_DATA_DIR: /data
+  MILVUS_URI: http://milvus:19530
+  HF_HOME: /cache/huggingface
+  DOCLING_CACHE_DIR: /cache/docling
+
+x-python-tools: &python-tools
+  image: science-agent-python-tools:local
+  build:
+    context: ..
+    dockerfile: deploy/api.Dockerfile
+    target: tools
+  profiles: [tools]
+  init: true
+  env_file: .env
+  environment: *api-environment
+  volumes:
+    - ./python:/manifests
+    - ./toolbox.sh:/usr/local/bin/toolbox:ro
+    - ../src:/app/src
+    - ../tests:/app/tests
+    - ../examples:/app/examples
+    - ./scripts:/app/deploy/scripts:ro
+    - model-cache:/cache
+  tmpfs:
+    - /data:uid=10001,gid=10001,mode=0755
+
+services:
+  api:
+    image: science-agent-api:local
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+      target: runtime
+    init: true
+    restart: unless-stopped
+    env_file: .env
+    environment: *api-environment
+    volumes:
+      - data:/data
+      - model-cache:/cache
+    depends_on:
+      milvus:
+        condition: service_healthy
+    stop_grace_period: 40s
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
+  web:
+    image: science-agent-web:local
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+      target: runtime
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/healthz]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  milvus:
+    image: milvusdb/milvus:v2.6.16
+    command: [milvus, run, standalone]
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_USE_EMBED: "false"
+      ETCD_ENDPOINTS: etcd:2379
+      COMMON_STORAGETYPE: local
+      DEPLOY_MODE: STANDALONE
+    volumes:
+      - milvus:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_healthy
+    stop_grace_period: 60s
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9091/healthz]
+      interval: 10s
+      start_period: 90s
+      timeout: 5s
+      retries: 10
+
+  etcd:
+    # Match the embedded etcd version in Milvus 2.6.16. Reuse its data directory
+    # without moving/reformatting metadata; only etcd writes this subdirectory.
+    image: quay.io/coreos/etcd:v3.5.23
+    entrypoint: [/usr/local/bin/etcd]
+    command:
+      - --name=default
+      - --data-dir=/var/lib/milvus/etcd
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-peer-urls=http://localhost:2380
+      - --initial-advertise-peer-urls=http://localhost:2380
+      - --initial-cluster=default=http://localhost:2380
+      - --quota-backend-bytes=4294967296
+      - --auto-compaction-mode=revision
+      - --auto-compaction-retention=1000
+    restart: unless-stopped
+    volumes:
+      - milvus:/var/lib/milvus
+    healthcheck:
+      test: [CMD, /usr/local/bin/etcdctl, --endpoints=http://127.0.0.1:2379, endpoint, health]
+      interval: 5s
+      timeout: 5s
+      start_period: 15s
+      retries: 12
+
+  python-tools:
+    <<: *python-tools
+
+  node-tools:
+    image: science-agent-node-tools:local
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+      target: tools
+    profiles: [tools]
+    init: true
+    volumes:
+      - ./node:/manifests
+      - ./toolbox.sh:/usr/local/bin/toolbox:ro
+      - ../web/src:/app/web/src
+      - ../web/index.html:/app/web/index.html:ro
+      - ../web/vite.config.ts:/app/web/vite.config.ts
+      - ../web/tsconfig.json:/app/web/tsconfig.json:ro
+      - ../web/eslint.config.js:/app/web/eslint.config.js:ro
+      - ../web/.prettierrc.json:/app/web/.prettierrc.json:ro
+      - ../web/.prettierignore:/app/web/.prettierignore:ro
+
+  python-lock:
+    image: science-agent-python-lock:local
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+      target: resolver
+    profiles: [tools]
+    init: true
+    volumes:
+      - ./python:/manifests
+      - ./toolbox.sh:/usr/local/bin/toolbox:ro
+      - ../README.md:/app/README.md:ro
+      - ../src:/app/src:ro
+      - model-cache:/cache
+
+  maintenance:
+    <<: *python-tools
+    user: "0:0"
+    volumes:
+      - ./python:/manifests
+      - ./toolbox.sh:/usr/local/bin/toolbox:ro
+      - ./scripts:/app/deploy/scripts:ro
+      - ./backups:/backups
+      - data:/data
+      - model-cache:/cache
+    tmpfs: []
+    command: [python, /app/deploy/scripts/migrate.py, --help]
+
+volumes:
+  data:
+    name: science-agent-data
+  model-cache:
+    name: science-agent-model-cache
+  milvus:
+    name: ${MILVUS_VOLUME_NAME:-science-agent-milvus}
+    external: ${MILVUS_VOLUME_EXTERNAL:-false}

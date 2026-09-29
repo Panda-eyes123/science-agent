@@ -43,7 +43,7 @@ async def test_real_pdf_milvus_bm25_provenance(tmp_path):
         async def embed_query(self, text):
             return [1.0, 0.0, 0.0, 0.0]
 
-    uri = os.getenv("MILVUS_URI", "http://127.0.0.1:19530")
+    uri = os.getenv("MILVUS_URI", "http://milvus:19530")
     name = f"science_test_{uuid4().hex}"
     corpus = MilvusCorpusStore(uri=uri, collection_name=name, embedding_dim=4)
     embeddings = FixedEmbeddings()

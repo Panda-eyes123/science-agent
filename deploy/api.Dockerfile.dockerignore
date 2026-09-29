@@ -1,0 +1,14 @@
+**
+!README.md
+!src/
+!src/**
+!tests/
+!tests/**
+!examples/
+!examples/**
+!deploy/
+!deploy/**
+deploy/.env
+deploy/backups/
+**/__pycache__/
+**/*.pyc
