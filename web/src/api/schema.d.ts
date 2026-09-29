@@ -39,6 +39,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/papers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Papers */
+        get: operations["papers_api_v1_papers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/threads/{thread_id}/papers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Paper */
+        post: operations["upload_paper_api_v1_threads__thread_id__papers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}": {
         parameters: {
             query?: never;
@@ -181,6 +215,54 @@ export interface components {
             /** Decision */
             decision?: ("allow" | "deny") | null;
         };
+        /** Body_upload_paper_api_v1_threads__thread_id__papers_post */
+        Body_upload_paper_api_v1_threads__thread_id__papers_post: {
+            /** File */
+            file: string;
+        };
+        /** EvidenceItem */
+        EvidenceItem: {
+            /** Chunk Id */
+            chunk_id: string;
+            /** Paper Id */
+            paper_id: string | null;
+            /** Title */
+            title: string | null;
+            /** Section Kind */
+            section_kind: ("background" | "method" | "experiment" | "result" | "discussion" | "other") | null;
+            /** Score */
+            score: number;
+            /** Excerpt */
+            excerpt: string;
+            /** Sources */
+            sources: components["schemas"]["EvidenceSource"][];
+        };
+        /** EvidenceSource */
+        EvidenceSource: {
+            /** Element Id */
+            element_id: string;
+            /** Page No */
+            page_no: number | null;
+            /**
+             * Element Type
+             * @enum {string}
+             */
+            element_type: "title" | "section_heading" | "paragraph" | "list" | "table" | "figure" | "caption" | "formula" | "code" | "reference" | "other";
+            /** Text */
+            text: string;
+        };
+        /**
+         * EvidenceView
+         * @description 可供模型和前端共享的证据摘要，不包含文件路径或解析器内部载荷。
+         */
+        EvidenceView: {
+            /** Query */
+            query: string;
+            /** Route */
+            route: ("background" | "method" | "experiment" | "result" | "discussion" | "other") | null;
+            /** Items */
+            items: components["schemas"]["EvidenceItem"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -205,6 +287,28 @@ export interface components {
             tool_calls?: components["schemas"]["ToolCallRequest"][];
             /** Run Id */
             run_id?: string | null;
+        };
+        /** PaperSummary */
+        PaperSummary: {
+            /** Paper Id */
+            paper_id: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Filename */
+            filename: string;
+            /** Title */
+            title?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "indexing" | "ready" | "failed" | "interrupted";
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+            /** Error */
+            error?: string | null;
         };
         /** Run */
         Run: {
@@ -231,6 +335,14 @@ export interface components {
             /** Events */
             events: (components["schemas"]["TextEvent"] | components["schemas"]["ToolEvent"] | components["schemas"]["ApprovalEvent"] | components["schemas"]["StateEvent"])[];
         };
+        /** RunEvidence */
+        RunEvidence: {
+            /** Run Id */
+            run_id: string;
+            /** Call Id */
+            call_id: string;
+            evidence_pack: components["schemas"]["EvidenceView"];
+        };
         /** SendMessage */
         SendMessage: {
             /** Text */
@@ -242,6 +354,11 @@ export interface components {
             model: string;
             /** Configured */
             configured: boolean;
+            /**
+             * Rag Configured
+             * @default false
+             */
+            rag_configured: boolean;
         };
         /** StateEvent */
         StateEvent: {
@@ -292,6 +409,8 @@ export interface components {
             /** Todos */
             todos: components["schemas"]["TodoItem"][];
             active_run: components["schemas"]["Run"] | null;
+            /** Evidence */
+            evidence?: components["schemas"]["RunEvidence"][];
         };
         /** ThreadSummary */
         ThreadSummary: {
@@ -381,6 +500,7 @@ export interface components {
             result?: unknown;
             /** Error */
             error?: string | null;
+            evidence_pack?: components["schemas"]["EvidenceView"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -460,6 +580,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+        };
+    };
+    papers_api_v1_papers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperSummary"][];
+                };
+            };
+        };
+    };
+    upload_paper_api_v1_threads__thread_id__papers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_paper_api_v1_threads__thread_id__papers_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

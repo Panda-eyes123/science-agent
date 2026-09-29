@@ -4,10 +4,13 @@ import { Sidebar } from './features/conversations/Sidebar'
 import { Chat } from './features/chat/Chat'
 import { RunPanel } from './features/runs/RunPanel'
 import { useWorkspace } from './features/conversations/useWorkspace'
+import { usePapers } from './features/papers/usePapers'
+import { PaperLibrary } from './features/papers/PaperLibrary'
 import styles from './App.module.css'
 
 export function App() {
   const work = useWorkspace()
+  const library = usePapers(work.selected, work.create, work.events)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(window.innerWidth >= 1200)
   useEffect(() => {
@@ -105,6 +108,7 @@ export function App() {
             onSend={work.send}
             onStop={() => void work.cancel()}
             onApprove={work.approve}
+            onOpenPapers={() => setPanelOpen(true)}
           />
         )}
       </main>
@@ -116,6 +120,15 @@ export function App() {
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
         onSelect={work.selectRun}
+        papers={
+          <PaperLibrary
+            papers={library.papers}
+            uploading={library.uploading}
+            error={library.error}
+            configured={work.info?.rag_configured ?? false}
+            onUpload={library.upload}
+          />
+        }
       />
     </div>
   )

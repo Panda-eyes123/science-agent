@@ -10,7 +10,8 @@ from science_agent import Agent, JSONStore, LocalSandbox, OpenAIProvider
 from science_agent.infra.providers.base import ModelProvider
 from science_agent.types import AgentEventEnvelope, utc_now_iso
 
-from .adapter import create_agent, public_event
+from .adapter import create_agent, public_event, public_tool_records
+from .errors import ServiceError
 from .models import (
     TERMINAL,
     Run,
@@ -21,17 +22,22 @@ from .models import (
     ThreadDetail,
     ThreadSummary,
 )
-
-
-class ServiceError(Exception):
-    def __init__(self, status: int, detail: str):
-        super().__init__(detail)
-        self.status = status
+from .papers import PaperService
 
 
 class RunService:
-    def __init__(self, data_dir: Path, provider: ModelProvider | None = None):
+    def __init__(
+        self,
+        data_dir: Path,
+        provider: ModelProvider | None = None,
+        papers: PaperService | None = None,
+    ):
         self.store = JSONStore(data_dir / "store")
+        self.papers = (
+            papers
+            if papers is not None
+            else PaperService.from_config(data_dir, self.store)
+        )
         self.workspace = data_dir / "workspaces"
         self.provider = provider if provider is not None else OpenAIProvider()
         self.agents: dict[str, Agent] = {}
@@ -45,9 +51,11 @@ class RunService:
             model=getattr(self.provider, "model", "test-provider"),
             configured=not isinstance(self.provider, OpenAIProvider)
             or bool(self.provider.api_key),
+            rag_configured=self.papers.configured,
         )
 
     async def startup(self) -> None:
+        await self.papers.startup()
         for thread_id in await self.store.list():
             for name in await self.store.list_snapshots(thread_id):
                 if not name.startswith("run_"):
@@ -67,6 +75,7 @@ class RunService:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self.papers.shutdown()
 
     async def agent(self, thread_id: str) -> Agent:
         if thread_id not in self.agents:
@@ -81,6 +90,7 @@ class RunService:
                 self.store,
                 LocalSandbox(self.workspace / thread_id),
                 self.provider,
+                self.papers,
             )
         return self.agents[thread_id]
 
@@ -91,6 +101,7 @@ class RunService:
             self.store,
             LocalSandbox(self.workspace / thread_id),
             self.provider,
+            self.papers,
         )
         self.agents[thread_id] = agent
         await self.store.save_info(thread_id, agent.info)
@@ -126,12 +137,14 @@ class RunService:
             ),
             None,
         )
+        records, evidence = public_tool_records(agent.tool_records)
         return ThreadDetail(
             thread=self._summary(agent),
             messages=agent.messages,
-            tool_calls=agent.tool_records,
+            tool_calls=records,
             todos=agent.todo_service.list_items(),
             active_run=active,
+            evidence=evidence,
         )
 
     async def history(self, thread_id: str) -> list[Run]:

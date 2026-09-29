@@ -58,6 +58,10 @@ class RetrievalService:
         section_kind: str | None = None,
         chunk_types: tuple[str, ...] | None = None,
     ) -> EvidencePack:
+        if not query.strip():
+            raise ValueError("Search query must not be empty.")
+        if limit is not None and not 1 <= limit <= self.fusion_limit:
+            raise ValueError(f"Search limit must be between 1 and {self.fusion_limit}.")
         requested_limit = limit or self.result_limit
         route = section_kind or route_query(query)
         query_vector = await self.embeddings.embed_query(query)
@@ -81,10 +85,13 @@ class RetrievalService:
             )
         )
         elements = await self.corpus.get_source_elements(element_ids)
+        paper_ids = list(dict.fromkeys(hit.paper_id for hit in reranked if hit.paper_id))
+        papers = await self.corpus.get_papers(paper_ids)
         return EvidencePack(
             query=query,
             hits=reranked,
             parents=parents_by_id,
             source_elements={element.element_id: element for element in elements},
             route=route,
+            papers={paper.paper_id: paper for paper in papers},
         )

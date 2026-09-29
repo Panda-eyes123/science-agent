@@ -6,13 +6,14 @@ from pathlib import Path
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, Query, Request
+from fastapi import FastAPI, Header, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from science_agent.config import DEFAULT_DATA_DIR
 
 from .models import (
     ApprovalDecision,
+    PaperSummary,
     Run,
     RunDetail,
     SendMessage,
@@ -53,6 +54,27 @@ def create_app(service: RunService | None = None) -> FastAPI:
     @app.post("/api/v1/threads", response_model=ThreadSummary, status_code=201)
     async def create_thread():
         return await runtime.create_thread()
+
+    @app.get("/api/v1/papers", response_model=list[PaperSummary])
+    async def papers():
+        return runtime.papers.list()
+
+    @app.post(
+        "/api/v1/threads/{thread_id}/papers",
+        response_model=PaperSummary,
+        status_code=202,
+    )
+    async def upload_paper(thread_id: str, file: UploadFile):
+        try:
+            await runtime.agent(thread_id)
+
+            async def chunks():
+                while chunk := await file.read(1024 * 1024):
+                    yield chunk
+
+            return await runtime.papers.upload(thread_id, file.filename or "", chunks())
+        finally:
+            await file.close()
 
     @app.get("/api/v1/threads/{thread_id}", response_model=ThreadDetail)
     async def thread(thread_id: str):

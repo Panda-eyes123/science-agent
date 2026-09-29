@@ -1,4 +1,4 @@
-import type { Run, RunDetail, RunEvent, ServiceInfo, Thread, ThreadDetail } from './types'
+import type { Paper, Run, RunDetail, RunEvent, ServiceInfo, Thread, ThreadDetail } from './types'
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(
@@ -7,8 +7,8 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
       ? undefined
       : {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          headers: body instanceof FormData ? undefined : { 'Content-Type': 'application/json' },
+          body: body instanceof FormData ? body : JSON.stringify(body),
         },
   )
   if (!response.ok) {
@@ -25,6 +25,12 @@ export const api = {
   info: () => request<ServiceInfo>('/info'),
   threads: () => request<Thread[]>('/threads'),
   createThread: () => request<Thread>('/threads', {}),
+  papers: () => request<Paper[]>('/papers'),
+  uploadPaper: (thread: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<Paper>(`/threads/${thread}/papers`, form)
+  },
   thread: (id: string) => request<ThreadDetail>(`/threads/${id}`),
   runs: (id: string) => request<Run[]>(`/threads/${id}/runs`),
   run: (thread: string, run: string) => request<RunDetail>(runPath(thread, run)),

@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from pydantic import BaseModel
+
 SectionKind = Literal[
     "background", "method", "experiment", "result", "discussion", "other"
 ]
@@ -91,4 +93,29 @@ class EvidencePack:
     parents: dict[str, ParentChunk]
     source_elements: dict[str, SourceElement]
     route: SectionKind | None = None
+    papers: dict[str, PaperDocument] = field(default_factory=dict)
 
+
+class EvidenceSource(BaseModel):
+    element_id: str
+    page_no: int | None
+    element_type: ElementType
+    text: str
+
+
+class EvidenceItem(BaseModel):
+    chunk_id: str
+    paper_id: str | None
+    title: str | None
+    section_kind: SectionKind | None
+    score: float
+    excerpt: str
+    sources: list[EvidenceSource]
+
+
+class EvidenceView(BaseModel):
+    """可供模型和前端共享的证据摘要，不包含文件路径或解析器内部载荷。"""
+
+    query: str
+    route: SectionKind | None
+    items: list[EvidenceItem]

@@ -19,6 +19,7 @@ dependencies = [
 web = [
   "fastapi>=0.115,<1",
   "uvicorn>=0.30,<1",
+  "python-multipart>=0.0.20,<1",
 ]
 rag = [
   "docling>=2.0,<3",

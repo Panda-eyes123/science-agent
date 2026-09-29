@@ -10,6 +10,7 @@ from science_agent.rag.retrieval import RetrievalService, reciprocal_rank_fusion
 from science_agent.rag.routing import classify_section, route_query
 from science_agent.rag.types import (
     ParentChunk,
+    PaperDocument,
     RetrievalHit,
     SourceElement,
 )
@@ -165,6 +166,9 @@ class FakeCorpus:
 
     async def get_source_elements(self, element_ids):
         return [self.element] if "element-1" in element_ids else []
+
+    async def get_papers(self, paper_ids):
+        return [PaperDocument(paper_id="paper-1", source_path="/private/paper.pdf", title="Test paper")]
 
 
 @pytest.mark.asyncio

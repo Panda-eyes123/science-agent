@@ -27,6 +27,8 @@ class PaperIngestionService:
     async def ingest(self, path: str | Path, *, paper_id: str | None = None) -> PaperDocument:
         paper, elements = await asyncio.to_thread(self.parser.parse, path, paper_id=paper_id)
         chunks = self.chunker.chunk(elements)
+        if not chunks.children:
+            raise ValueError("PDF did not contain any indexable text.")
         vectors = await self.embeddings.embed_documents(
             [child.text for child in chunks.children]
         )

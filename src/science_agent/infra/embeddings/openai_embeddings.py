@@ -17,7 +17,7 @@ class OpenAIEmbeddingProvider:
         timeout: float = 30.0,
     ) -> None:
         self.api_key = api_key or os.getenv("EMBEDDING_API_KEY") or os.getenv("OPENAI_API_KEY")
-        self.model = model or DEFAULT_EMBEDDING_MODEL
+        self.model = model or os.getenv("EMBEDDING_MODEL") or DEFAULT_EMBEDDING_MODEL
         self.base_url = (
             base_url or os.getenv("EMBEDDING_BASE_URL") or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1"
         ).rstrip("/")

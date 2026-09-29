@@ -6,6 +6,7 @@ import {
   FlaskConical,
   Lightbulb,
   LoaderCircle,
+  Paperclip,
   ShieldCheck,
   Square,
   Terminal,
@@ -17,6 +18,8 @@ import type { Message, Run, RunEvent, ThreadDetail, ToolEvent } from '../../api/
 import { statusLabel, terminal } from '../../api/types'
 import styles from '../../App.module.css'
 import { ToolCard } from '../runs/ToolCard'
+import { EvidenceList } from '../papers/EvidenceList'
+import { collectEvidence } from '../papers/evidence'
 
 type Approval = Extract<RunEvent, { type: 'approval.required' | 'approval.resolved' }>
 export function Chat({
@@ -28,6 +31,7 @@ export function Chat({
   onSend,
   onStop,
   onApprove,
+  onOpenPapers,
 }: {
   detail: ThreadDetail | null
   events: RunEvent[]
@@ -37,12 +41,14 @@ export function Chat({
   onSend: (text: string) => Promise<void>
   onStop: () => void
   onApprove: (call: string, decision: 'allow' | 'deny') => Promise<void>
+  onOpenPapers: () => void
 }) {
   const [draft, setDraft] = useState('')
   const [following, setFollowing] = useState(true)
   const viewport = useRef<HTMLDivElement>(null)
   const composing = useRef(false)
   const active = !!run && !terminal(run.status)
+  const evidence = collectEvidence(detail, events)
   const messages = [...(detail?.messages ?? [])].filter(
     (m) => m.role === 'user' || (m.role === 'assistant' && (m.content || m.tool_calls?.length)),
   )
@@ -147,7 +153,7 @@ export function Chat({
           </div>
         ) : (
           <div className={styles.messageList}>
-            {messages.map((message) => (
+            {messages.map((message, index) => (
               <article
                 key={message.id}
                 className={message.role === 'user' ? styles.userMessage : styles.assistantMessage}
@@ -178,11 +184,19 @@ export function Chat({
                     active={active && message.run_id === run?.id}
                     record={detail?.tool_calls.find(
                       (record) =>
-                        record.call_id === call.call_id &&
-                        record.run_id === message.run_id,
+                        record.call_id === call.call_id && record.run_id === message.run_id,
                     )}
                   />
                 ))}
+                {!messages.slice(index + 1).some((later) => later.run_id === message.run_id) &&
+                  evidence
+                    .filter((item) => item.run_id === message.run_id)
+                    .map((item) => (
+                      <EvidenceList
+                        key={`${item.run_id}:${item.call_id}`}
+                        pack={item.evidence_pack}
+                      />
+                    ))}
               </article>
             ))}
             {tools.map((tool) => (
@@ -248,6 +262,9 @@ export function Chat({
             }}
           />
           <div className={styles.composerFooter}>
+            <button className={styles.paperButton} onClick={onOpenPapers}>
+              <Paperclip size={14} /> 论文库
+            </button>
             <span>
               <ShieldCheck size={14} /> 写入前由你确认
             </span>

@@ -66,12 +66,12 @@ uv sync --extra rag --extra dev
 ## 本地研究工作台
 
 工作台支持会话历史、真实模型流式回答、工具执行进度、人工审批和停止运行。
-当前版本为本地单用户应用；论文 RAG 继续作为 SDK 能力提供，尚未接入网页。
+当前版本为本地单用户应用，支持网页上传 PDF、自动入库、全局共享检索和来源证据展示。
 
 准备 Python 3.13+、uv 和 Node.js 22.12+，在项目根目录执行：
 
 ```powershell
-uv sync --extra web --extra dev
+uv sync --extra web --extra rag --extra dev
 Copy-Item .env.example .env
 ```
 
@@ -104,6 +104,61 @@ npm run dev
 `.local/data/workspaces/<thread_id>`，可用 `SCIENCE_AGENT_DATA_DIR` 更改数据根目录。
 运行由后端持有，网页断开不会停止任务；刷新后可续传事件、继续审批。
 停止不会回滚已完成的文件写入。后端重启将未完成运行标记为“已中断”，不会自动重放工具。
+
+### 论文库与证据检索
+
+Windows 使用 Docker Desktop 的 Linux 容器运行本机 Milvus；Milvus Lite 不支持 Windows。
+启动 Docker Desktop 后，在项目根目录执行：
+
+```powershell
+docker compose -f compose.rag.yaml up -d
+docker compose -f compose.rag.yaml ps
+```
+
+本地配置固定使用 Milvus `v2.6.16`，采用官方支持的内嵌 etcd 和本地存储模式，
+仅将 19530、9091 端口绑定到 `127.0.0.1`。数据保存在 Compose 命名卷中；
+`docker compose -f compose.rag.yaml down` 停止服务并保留数据。
+配置来源：<https://github.com/milvus-io/milvus/blob/v2.6.16/scripts/standalone_embed.sh>。
+
+在 `.env` 设置 `MILVUS_URI`、`MILVUS_COLLECTION`、`EMBEDDING_MODEL` 和 `EMBEDDING_DIM`。
+默认 URI 为 `http://127.0.0.1:19530`，默认维度为 1536；维度必须与 Embedding API 的实际输出一致。
+`EMBEDDING_API_KEY`、`EMBEDDING_BASE_URL` 可单独设置，未设置时沿用 `OPENAI_*`。
+更换向量维度时使用新的 collection 名称，不直接复用旧索引。
+
+Web 使用 BM25 与向量召回的 RRF 融合排名，再截取结果，**不调用外部重排模型**。
+现有 `APIReranker` 继续供 SDK 使用。Docling 首次解析需要下载布局/OCR 等模型资源；
+可按 `.env.example` 设置 `HF_HOME` 和 `DOCLING_CACHE_DIR`，将模型缓存放在 `.local/cache/`。
+Windows 上 PyMuPDF 和部分解析依赖需要 Microsoft Visual C++ x64 Redistributable。
+嵌入 API 会接收论文文本片段，模型 API 会接收检索证据；API 密钥始终留在服务端。
+
+操作流程：打开右侧“全局论文库” → 上传不超过 50 MB 的 PDF → 等待“可以检索” →
+在对话中询问论文内容 → 展开回答旁的“检索证据”。所有会话共享已完成入库的论文。
+证据显示实际命中的论文、章节、页码和原文摘录，不代表模型回答已经逐句校验。
+无法识别论文标题时使用上传文件名作为显示名称。
+页码缺失时明确显示“页码未提供”，不会补造页码。刷新和查看历史均使用已记录的证据快照。
+
+上传文件保存在 `.local/data/papers/uploads/<paper_id>.pdf`，解析产物保存在
+`.local/data/papers/artifacts/`；原始文件名只用于展示。论文状态通过现有 JSONStore
+的 `paper_<paper_id>` 快照保存。上传后后台自动入库，不占用聊天 Run；停止聊天不取消入库。
+入库失败或服务重启会显示失败/中断状态，不自动重放。可将论文详情中的 ID 发给助手，
+要求使用 `paper_ingest` 重试；该工具仍需写操作审批。已就绪文献重复入库直接返回状态。
+
+新增接口：`POST /api/v1/threads/{id}/papers`（multipart 上传，返回 202），
+`GET /api/v1/papers`（全局状态列表）。`paper_ingest` 的 Web 输入仅接受已登记 `paper_id`，
+SDK 的本地路径工具保持原用法。`paper_search` 保留 `evidence`/`route`，新增精简
+`evidence_pack`；Web 将它投影为类型化 SSE 字段和历史引用，移除内部文件路径与解析载荷。
+
+默认测试不连接外部服务。运行真实 PDF 与 Milvus 的集成测试：
+
+```powershell
+$env:SCIENCE_AGENT_TEST_MILVUS = "1"
+$env:HF_HOME = "$PWD/.local/cache/huggingface"
+$env:DOCLING_CACHE_DIR = "$PWD/.local/cache/docling"
+uv run pytest tests/integration/test_milvus_rag.py -q
+```
+
+该集成测试使用真实 Docling、PDF 和 Milvus，但使用确定性测试向量，验证索引协议与来源回溯；
+它不等同于真实 Embedding/LLM 质量验收。完整语义检索验收仍需要有效的服务端模型配置。
 
 ### 模块与契约
 

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 from dataclasses import asdict
 from typing import Any
 
@@ -28,6 +29,7 @@ class MilvusCorpusStore:
         self.embedding_dim = embedding_dim
         self._client: Any | None = None
         self._ready = False
+        self._init_lock = threading.Lock()
 
     async def upsert_paper(
         self,
@@ -79,6 +81,12 @@ class MilvusCorpusStore:
     async def _run(self, function: Any, *args: Any) -> Any:
         return await asyncio.to_thread(function, *args)
 
+    async def close(self) -> None:
+        if self._client is not None:
+            await asyncio.to_thread(self._client.close)
+            self._client = None
+            self._ready = False
+
     def _upsert_paper(
         self,
         paper: PaperDocument,
@@ -125,6 +133,7 @@ class MilvusCorpusStore:
                 limit=limit,
                 filter=self._search_filter(section_kind, chunk_types),
                 output_fields=self._chunk_fields(),
+                consistency_level="Strong",
             )
         )
 
@@ -144,6 +153,7 @@ class MilvusCorpusStore:
                 limit=limit,
                 filter=self._search_filter(section_kind, chunk_types),
                 output_fields=self._chunk_fields(),
+                consistency_level="Strong",
             )
         )
 
@@ -156,10 +166,16 @@ class MilvusCorpusStore:
             collection_name=self.records_collection,
             filter=f'record_type == "{record_type}" and record_id in [{escaped}]',
             output_fields=["payload"],
+            consistency_level="Strong",
         )
         return [model(**row["payload"]) for row in rows]
 
     def _ensure_ready(self) -> Any:
+        # 稀疏/稠密召回并行进入线程池，首次创建集合必须只执行一次。
+        with self._init_lock:
+            return self._initialize()
+
+    def _initialize(self) -> Any:
         client = self._get_client()
         if self._ready:
             return client
@@ -200,7 +216,11 @@ class MilvusCorpusStore:
             schema.add_field("record_id", DataType.VARCHAR, is_primary=True, max_length=128)
             schema.add_field("record_type", DataType.VARCHAR, max_length=32)
             schema.add_field("payload", DataType.JSON)
-            client.create_collection(collection_name=self.records_collection, schema=schema)
+            # Milvus 2.x 不接受纯标量集合；此常量向量只满足存储约束，不参与证据检索。
+            schema.add_field("record_vector", DataType.FLOAT_VECTOR, dim=2)
+            index = client.prepare_index_params()
+            index.add_index("record_vector", index_type="FLAT", metric_type="L2")
+            client.create_collection(collection_name=self.records_collection, schema=schema, index_params=index)
         self._ready = True
         return client
 
@@ -217,7 +237,7 @@ class MilvusCorpusStore:
 
     @staticmethod
     def _record(record_type: str, record_id: str, payload: Any) -> dict[str, Any]:
-        return {"record_id": record_id, "record_type": record_type, "payload": asdict(payload)}
+        return {"record_id": record_id, "record_type": record_type, "payload": asdict(payload), "record_vector": [0.0, 0.0]}
 
     @staticmethod
     def _search_filter(

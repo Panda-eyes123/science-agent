@@ -3,6 +3,7 @@ import type { Run, RunEvent, ThreadDetail, ToolEvent } from '../../api/types'
 import { statusLabel, terminal } from '../../api/types'
 import styles from '../../App.module.css'
 import { ToolCard } from './ToolCard'
+import type { ReactNode } from 'react'
 
 export function RunPanel({
   detail,
@@ -12,6 +13,7 @@ export function RunPanel({
   open,
   onClose,
   onSelect,
+  papers,
 }: {
   detail: ThreadDetail | null
   run: Run | null
@@ -20,6 +22,7 @@ export function RunPanel({
   open: boolean
   onClose: () => void
   onSelect: (id: string) => void
+  papers: ReactNode
 }) {
   const calls = events.filter((e): e is ToolEvent => e.type === 'tool.started')
   return (
@@ -33,6 +36,7 @@ export function RunPanel({
         </button>
       </div>
       <div className={styles.panelBody}>
+        {papers}
         <div className={styles.sectionLabel}>当前状态</div>
         <div className={styles.statusCard}>
           <span className={styles.statusDot} />

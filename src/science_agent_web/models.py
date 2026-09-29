@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field
 
 from science_agent.core.todo import TodoItem
+from science_agent.rag.types import EvidenceView
 from science_agent.types import Message, ToolCallRecord
 
 RunStatus = Literal[
@@ -47,6 +48,7 @@ class ToolEvent(EventBase):
     arguments: dict[str, Any] = Field(default_factory=dict)
     result: Any = None
     error: str | None = None
+    evidence_pack: EvidenceView | None = None
 
 
 class ApprovalEvent(EventBase):
@@ -80,12 +82,19 @@ class ThreadSummary(BaseModel):
     updated_at: str
 
 
+class RunEvidence(BaseModel):
+    run_id: str
+    call_id: str
+    evidence_pack: EvidenceView
+
+
 class ThreadDetail(BaseModel):
     thread: ThreadSummary
     messages: list[Message]
     tool_calls: list[ToolCallRecord]
     todos: list[TodoItem]
     active_run: Run | None
+    evidence: list[RunEvidence] = Field(default_factory=list)
 
 
 class SendMessage(BaseModel):
@@ -99,3 +108,15 @@ class ApprovalDecision(BaseModel):
 class ServiceInfo(BaseModel):
     model: str
     configured: bool
+    rag_configured: bool = False
+
+
+class PaperSummary(BaseModel):
+    paper_id: str
+    thread_id: str
+    filename: str
+    title: str | None = None
+    status: Literal["indexing", "ready", "failed", "interrupted"]
+    created_at: str
+    updated_at: str
+    error: str | None = None
